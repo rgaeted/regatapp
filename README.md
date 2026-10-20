@@ -28,9 +28,11 @@ minutos según la conexión); los arranques siguientes son rápidos.
 7. `npm run dev`
 8. Abre en el navegador el enlace impreso en el paso 6 (`http://localhost:3000/entrar?t=...`).
 
-El enlace es de un solo uso y vale 24 horas. Para volver a entrar como admin
-local con un enlace nuevo, el más simple es `npx supabase db reset` y repetir el
-paso 6; para un atleta existente, `npm run enlace:atleta -- --atleta <uuid>`.
+El enlace es de un solo uso y vale 24 horas. Cada `npm run crear-admin -- --nombre "…"`
+crea un admin nuevo con su propio enlace (no hace falta resetear la base). Para un
+atleta existente: `npm run enlace:atleta -- --atleta <uuid>` (los ids de los atletas
+de prueba están en `supabase/seed.sql`). Si pierdes el enlace de un admin, crea otro
+admin; todavía no hay script para regenerar el enlace de uno existente.
 
 ## Tests
 
@@ -125,7 +127,7 @@ primero entra como ese admin.
   nunca en código cliente ni con prefijo `NEXT_PUBLIC_`.
 - No se commitea ningún `.env*` salvo `.env.example` (sin valores secretos).
   `.env.supabase` (token del CLI de Supabase) tampoco debe subirse jamás.
-- Los enlaces de acceso son de un solo uso y caducan; un enlace nuevo reemplaza al anterior.
+- Los enlaces de acceso son de un solo uso y caducan; generar un enlace nuevo para el mismo usuario invalida el anterior.
 - Las tablas tienen RLS desde la primera migración; los tests de integración
   verifican que un remero no ve datos de otro atleta.
 
