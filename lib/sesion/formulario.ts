@@ -1,5 +1,6 @@
 import { sesionInputSchema, type SesionInput } from '@/lib/schemas/sesion'
 import { digitosATiempo } from './digitos'
+import { hoySantiago, TZ } from '@/lib/schemas/consentimiento'
 import { repartirSplits } from './splits'
 
 /** Estado crudo del formulario: todo texto, tal como lo tipea la persona. */
@@ -9,6 +10,8 @@ export type EstadoFormulario = {
   tipo: SesionInput['tipo']
   modalidad: SesionInput['modalidad']
   fecha: string
+  /** Día elegido (YYYY-MM-DD, Santiago); vacío = ahora. */
+  dia: string
   distancia: string
   tiempoDigitos: string
   nSplits: number
@@ -36,6 +39,7 @@ export function estadoInicial(id: string, atletaId: string, ahora: Date): Estado
     tipo: 'entrenamiento',
     modalidad: 'ergometro',
     fecha: ahora.toISOString(),
+    dia: '',
     distancia: '',
     tiempoDigitos: '',
     nSplits: 0,
@@ -57,10 +61,12 @@ function texto(t: string): string | undefined {
 }
 
 /** Convierte el estado del formulario en el input validado de `guardarSesion`. */
-export function armarSesionInput(e: EstadoFormulario): ResultadoArmado {
+export function armarSesionInput(e: EstadoFormulario, ahora: Date = new Date()): ResultadoArmado {
   const errores: Record<string, string> = {}
 
   if (!e.atletaId) errores.atleta = 'Elige un atleta'
+  if (e.dia !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(e.dia)) errores.fecha = 'Fecha inválida'
+  else if (e.dia > hoySantiago(ahora)) errores.fecha = 'La fecha no puede ser futura'
 
   const distancia = numero(e.distancia)
   if (distancia !== undefined && !(Number.isInteger(distancia) && distancia > 0)) {
@@ -120,7 +126,7 @@ export function armarSesionInput(e: EstadoFormulario): ResultadoArmado {
     atleta_id: e.atletaId,
     tipo: e.tipo,
     modalidad: e.modalidad,
-    fecha: e.fecha,
+    fecha: fechaDeSesion(e.dia, ahora),
     distancia_m: distancia,
     tiempo_ds: tiempo,
     ...campos,
@@ -135,4 +141,22 @@ export function armarSesionInput(e: EstadoFormulario): ResultadoArmado {
     return { ok: false, errores: resto }
   }
   return { ok: true, input: r.data }
+}
+
+/** Hora (0-23) en Santiago de un instante. */
+function horaSantiago(d: Date): number {
+  const partes = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: 'numeric', hourCycle: 'h23' }).formatToParts(d)
+  return Number(partes.find((p) => p.type === 'hour')?.value)
+}
+
+/**
+ * Instante de la sesión: ahora si no se eligió día; si se eligió, las 12:00 de
+ * Santiago de ese día (respeta el horario de verano), para que ninguna zona
+ * horaria la mueva al día vecino.
+ */
+export function fechaDeSesion(dia: string, ahora: Date): string {
+  if (dia === '') return ahora.toISOString()
+  const [a, m, d] = dia.split('-').map(Number)
+  const candidato = new Date(Date.UTC(a, m - 1, d, 12))
+  return new Date(candidato.getTime() + (12 - horaSantiago(candidato)) * 3_600_000).toISOString()
 }

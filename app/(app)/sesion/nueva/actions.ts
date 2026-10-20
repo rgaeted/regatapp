@@ -16,6 +16,7 @@ const estadoSchema = z.object({
   tipo: z.enum(["entrenamiento", "test", "competencia"]),
   modalidad: z.enum(["ergometro", "agua", "gimnasio", "otro"]),
   fecha: z.string(),
+  dia: z.string(),
   distancia: z.string(),
   tiempoDigitos: z.string(),
   nSplits: z.number().int().min(0).max(50),

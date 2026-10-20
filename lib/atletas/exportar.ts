@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { leerTodo, lotes } from './paginar'
 
 type Fila = Record<string, unknown>
 
@@ -35,11 +36,8 @@ export function armarExportacion(crudo: Crudo, ahora: Date = new Date()): Export
   }
 }
 
-async function leer<T>(contexto: string, p: PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
-  const { data, error } = await p
-  if (error) throw new Error(`${contexto}: ${error.message}`)
-  return data ?? []
-}
+// Ids por consulta `in (...)`: con cientos la URL de PostgREST se pasa de largo.
+const LOTE_IDS = 100
 
 /**
  * Todos los datos de un atleta (Ley 21.719: derecho de acceso). Recibe service
@@ -50,17 +48,33 @@ export async function exportarAtleta(admin: SupabaseClient, atletaId: string): P
   if (error) throw new Error(`atleta: ${error.message}`)
   if (!atleta) throw new Error('El atleta no existe')
 
-  const sesiones = await leer<Crudo['sesiones'][number]>('sesion', admin.from('sesion').select('*').eq('atleta_id', atletaId))
-  const ids = sesiones.map((s) => s.id)
+  // Todas las lecturas paginan (PostgREST corta en 1000 filas) con orden estable.
+  const sesiones = await leerTodo<Crudo['sesiones'][number]>('sesion', (d, h) =>
+    admin.from('sesion').select('*').eq('atleta_id', atletaId).order('id').range(d, h),
+  )
   const idsCaptura = sesiones.map((s) => s.captura_id).filter((c): c is string => typeof c === 'string')
-  const splits = ids.length
-    ? await leer<Crudo['splits'][number]>('split', admin.from('split').select('*').in('sesion_id', ids))
-    : []
-  const capturas = idsCaptura.length
-    ? await leer<Crudo['capturas'][number]>('captura', admin.from('captura').select('*').in('id', idsCaptura))
-    : []
-  const consentimientos = await leer<Fila>('consentimiento', admin.from('consentimiento').select('*').eq('atleta_id', atletaId))
-  const registro = await leer<Fila>('registro_acceso', admin.from('registro_acceso').select('*').eq('atleta_id', atletaId))
+  const splits: Crudo['splits'] = []
+  for (const lote of lotes(sesiones.map((s) => s.id), LOTE_IDS)) {
+    splits.push(
+      ...(await leerTodo<Crudo['splits'][number]>('split', (d, h) =>
+        admin.from('split').select('*').in('sesion_id', lote).order('id').range(d, h),
+      )),
+    )
+  }
+  const capturas: Crudo['capturas'] = []
+  for (const lote of lotes(idsCaptura, LOTE_IDS)) {
+    capturas.push(
+      ...(await leerTodo<Crudo['capturas'][number]>('captura', (d, h) =>
+        admin.from('captura').select('*').in('id', lote).order('id').range(d, h),
+      )),
+    )
+  }
+  const consentimientos = await leerTodo<Fila>('consentimiento', (d, h) =>
+    admin.from('consentimiento').select('*').eq('atleta_id', atletaId).order('id').range(d, h),
+  )
+  const registro = await leerTodo<Fila>('registro_acceso', (d, h) =>
+    admin.from('registro_acceso').select('*').eq('atleta_id', atletaId).order('id').range(d, h),
+  )
 
   return armarExportacion({ atleta, sesiones, splits, capturas, consentimientos, registro_acceso: registro })
 }

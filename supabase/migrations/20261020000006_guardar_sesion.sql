@@ -6,14 +6,18 @@
 --
 -- Idempotente por id: el cliente genera el uuid una vez; reintentar (doble
 -- toque, red lenta) devuelve el mismo id sin duplicar la sesión ni los splits.
+-- Pero si el id ya existe con OTROS datos (atleta, distancia o tiempo distintos:
+-- una página restaurada con "atrás" que reutiliza el id), es un conflicto y
+-- se rechaza con 23505: devolver éxito perdería la sesión nueva sin avisar.
 
 create function guardar_sesion(p_sesion jsonb, p_splits jsonb)
 returns uuid
 language plpgsql volatile security invoker set search_path = public, pg_catalog
 as $$
 declare
-  v_uid uuid := auth.uid();
-  v_id  uuid;
+  v_uid  uuid := auth.uid();
+  v_id   uuid;
+  v_prev record;
 begin
   if v_uid is null then
     raise exception 'se requiere un usuario autenticado' using errcode = '42501';
@@ -30,9 +34,15 @@ begin
     raise exception 'la sesión requiere id' using errcode = '22023';
   end if;
 
-  -- Reintento del mismo usuario: ya está guardada.
-  if exists (select 1 from sesion where id = v_id and creado_por = v_uid) then
-    return v_id;
+  select atleta_id, distancia_m, tiempo_ds into v_prev
+  from sesion where id = v_id and creado_por = v_uid;
+  if found then
+    if v_prev.atleta_id is distinct from (p_sesion->>'atleta_id')::uuid
+       or v_prev.distancia_m is distinct from (p_sesion->>'distancia_m')::integer
+       or v_prev.tiempo_ds is distinct from (p_sesion->>'tiempo_ds')::integer then
+      raise exception 'ya existe una sesión con este id y otros datos' using errcode = '23505';
+    end if;
+    return v_id; -- reintento del mismo envío: ya está guardada
   end if;
 
   insert into sesion (

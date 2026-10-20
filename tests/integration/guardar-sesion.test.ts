@@ -54,6 +54,20 @@ describe('guardar_sesion', () => {
     expect(await contar('split', 'sesion_id', input.id)).toBe(4)
   })
 
+  it('el mismo id con otro atleta o tiempo es un conflicto, no un éxito', async () => {
+    const { cliente, id: entId, atletaId } = await entrenadorConAtleta()
+    const otro = await crearAtleta()
+    await asignar(entId, otro)
+    const input = sesion(atletaId)
+    expect((await guardarSesion(cliente, input)).ok).toBe(true)
+
+    const r1 = await guardarSesion(cliente, { ...input, atleta_id: otro })
+    expect(r1).toEqual({ ok: false, error: 'Esta sesión ya se guardó con otros datos. Recarga la página e inténtalo de nuevo.' })
+    const r2 = await guardarSesion(cliente, { ...input, tiempo_ds: 4000 })
+    expect(r2.ok).toBe(false)
+    expect(await contar('sesion', 'id', input.id)).toBe(1)
+  })
+
   it('un remero no puede guardar con el atleta_id de otro', async () => {
     const propio = await crearAtleta()
     const ajeno = await crearAtleta()

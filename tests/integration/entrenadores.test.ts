@@ -56,3 +56,17 @@ describe('asignarAtleta / terminarAsignacion', () => {
     expect(await atletaVisible(ent.cliente, atletaId)).toBe(false)
   })
 })
+
+describe('reasignar el mismo día', () => {
+  it('terminar y volver a asignar restaura el acceso', async () => {
+    const adm = await crearUsuario({ rol: 'admin' })
+    const ent = await crearUsuario({ rol: 'entrenador' })
+    const atletaId = await crearAtleta()
+    await asignarAtleta(adm.cliente, admin(), ent.id, atletaId)
+    await terminarAsignacion(adm.cliente, ent.id, atletaId)
+    expect(await atletaVisible(ent.cliente, atletaId)).toBe(false)
+
+    expect(await asignarAtleta(adm.cliente, admin(), ent.id, atletaId)).toEqual({ ok: true })
+    expect(await atletaVisible(ent.cliente, atletaId)).toBe(true)
+  })
+})

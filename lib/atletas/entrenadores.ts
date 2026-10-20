@@ -2,14 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { generarEnlace } from '@/lib/acceso/enlace'
 import { crearUsuarioStaff } from '@/lib/acceso/usuario'
 import { hoySantiago } from '@/lib/schemas/consentimiento'
+import { diaAnterior } from '@/lib/fechas'
 import type { Resultado } from './administrar'
 
-/** Día civil anterior de una fecha YYYY-MM-DD. */
-export function diaAnterior(fecha: string): string {
-  const d = new Date(`${fecha}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() - 1)
-  return d.toISOString().slice(0, 10)
-}
+export { diaAnterior }
+
 
 /**
  * Crea un entrenador y su primer enlace de acceso. Recibe service role y NO
@@ -40,8 +37,19 @@ export async function asignarAtleta(
   if (perfil?.rol !== 'entrenador') return { ok: false, error: 'Esa persona no es entrenador.' }
 
   const { error } = await supabase.from('asignacion_entrenador').insert({ entrenador_id: entrenadorId, atleta_id: atletaId })
-  // 23505: ya estaba asignado hoy; el resultado deseado ya se cumple.
-  if (error && error.code !== '23505') {
+  if (error?.code === '23505') {
+    // Ya hay una fila con desde = hoy (la clave incluye `desde`). Si se había
+    // terminado hoy ("Quitar" por error), se reactiva; si seguía vigente, no cambia nada.
+    const { error: errReactivar } = await supabase
+      .from('asignacion_entrenador')
+      .update({ hasta: null })
+      .eq('entrenador_id', entrenadorId)
+      .eq('atleta_id', atletaId)
+      .not('hasta', 'is', null)
+    if (errReactivar) return { ok: false, error: 'No se pudo asignar el atleta.' }
+    return { ok: true }
+  }
+  if (error) {
     return { ok: false, error: error.code === '42501' ? 'Solo un admin puede asignar atletas.' : 'No se pudo asignar el atleta.' }
   }
   return { ok: true }

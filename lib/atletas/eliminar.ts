@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { leerTodo, lotes } from './paginar'
+
 const BUCKET = 'capturas'
+const LOTE_IDS = 100
 
 function falla(contexto: string, error: { message: string } | null): void {
   if (error) throw new Error(`${contexto}: ${error.message}`)
@@ -22,24 +25,28 @@ export async function eliminarAtleta(admin: SupabaseClient, atletaId: string, ej
   falla('atleta', errAtleta)
   if (!atleta) return // ya eliminado
 
-  // Capturas: las de sus sesiones y las que subió su propio usuario.
-  const { data: sesiones, error: errSes } = await admin.from('sesion').select('captura_id').eq('atleta_id', atletaId)
-  falla('sesion', errSes)
-  const ids = new Set((sesiones ?? []).map((s) => s.captura_id as string | null).filter((c): c is string => c !== null))
+  // Capturas: las de sus sesiones y las que subió su propio usuario. Las lecturas
+  // paginan (PostgREST corta en 1000 filas) para no dejar fotos huérfanas.
+  const sesiones = await leerTodo<{ captura_id: string | null }>('sesion', (d, h) =>
+    admin.from('sesion').select('captura_id').eq('atleta_id', atletaId).order('id').range(d, h),
+  )
+  const ids = new Set(sesiones.map((s) => s.captura_id).filter((c): c is string => c !== null))
   if (atleta.user_id) {
-    const { data: propias, error } = await admin.from('captura').select('id').eq('subida_por', atleta.user_id)
-    falla('captura', error)
-    for (const c of propias ?? []) ids.add(c.id as string)
+    const propias = await leerTodo<{ id: string }>('captura', (d, h) =>
+      admin.from('captura').select('id').eq('subida_por', atleta.user_id).order('id').range(d, h),
+    )
+    for (const c of propias) ids.add(c.id)
   }
-  if (ids.size > 0) {
-    const { data: capturas, error } = await admin.from('captura').select('id, storage_path').in('id', [...ids])
-    falla('captura', error)
-    const rutas = (capturas ?? []).map((c) => c.storage_path as string)
+  for (const lote of lotes([...ids], LOTE_IDS)) {
+    const capturas = await leerTodo<{ storage_path: string }>('captura', (d, h) =>
+      admin.from('captura').select('storage_path').in('id', lote).order('id').range(d, h),
+    )
+    const rutas = capturas.map((c) => c.storage_path)
     if (rutas.length > 0) {
       const { error: errStorage } = await admin.storage.from(BUCKET).remove(rutas)
       falla('storage', errStorage)
     }
-    const { error: errDel } = await admin.from('captura').delete().in('id', [...ids])
+    const { error: errDel } = await admin.from('captura').delete().in('id', lote)
     falla('captura', errDel)
   }
 

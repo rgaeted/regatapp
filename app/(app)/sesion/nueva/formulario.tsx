@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { AtletaResumen } from "@/lib/atletas/lista";
-import { digitosATiempo, formatearDigitos, interpretarTiempoPegado, soloDigitos } from "@/lib/sesion/digitos";
+import { digitosATiempo, digitosDelTexto, formatearDigitos, interpretarTiempoPegado } from "@/lib/sesion/digitos";
+import { diaAnterior } from "@/lib/fechas";
+import { hoySantiago } from "@/lib/schemas/consentimiento";
 import { armarSesionInput, estadoInicial, type EstadoFormulario } from "@/lib/sesion/formulario";
 import { diferenciaSuma } from "@/lib/sesion/splits";
 import { formatTiempo } from "@/lib/tiempo";
@@ -14,6 +16,12 @@ const TIPOS: { valor: EstadoFormulario["tipo"]; texto: string }[] = [
   { valor: "entrenamiento", texto: "Entrenamiento" },
   { valor: "test", texto: "Test" },
   { valor: "competencia", texto: "Competencia" },
+];
+const MODALIDADES: { valor: EstadoFormulario["modalidad"]; texto: string }[] = [
+  { valor: "ergometro", texto: "Ergómetro" },
+  { valor: "agua", texto: "Agua" },
+  { valor: "gimnasio", texto: "Gimnasio" },
+  { valor: "otro", texto: "Otro" },
 ];
 // Un split de 500 m cabe en 4 dígitos (m:ss.d): al completarlos se salta al siguiente
 // campo, porque el teclado numérico de iOS no tiene tecla "siguiente".
@@ -27,22 +35,36 @@ const campo = "h-14 w-full rounded-xl border border-zinc-300 bg-white px-4 text-
 const etiqueta = "text-base font-medium text-zinc-700";
 
 type Props = {
-  sesionId: string;
   atletas: AtletaResumen[];
   atletaInicial: string;
   mostrarSelector: boolean;
 };
 
-export function FormularioSesion({ sesionId, atletas, atletaInicial, mostrarSelector }: Props) {
-  const [e, setE] = useState<EstadoFormulario>(() => estadoInicial(sesionId, atletaInicial, new Date()));
+export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Props) {
+  const [e, setE] = useState<EstadoFormulario>(() => estadoInicial(crypto.randomUUID(), atletaInicial, new Date()));
   const [error, setError] = useState("");
   const [otra, setOtra] = useState(false);
   const [pendiente, empezar] = useTransition();
   const refsSplit = useRef<(HTMLInputElement | null)[]>([]);
   const refGuardar = useRef<HTMLButtonElement>(null);
 
+  // "Atrás" puede restaurar esta página entera (bfcache) con el id de una sesión
+  // ya guardada: se parte de cero con un id nuevo.
+  useEffect(() => {
+    const alMostrar = (ev: PageTransitionEvent) => {
+      if (!ev.persisted) return;
+      setE(estadoInicial(crypto.randomUUID(), atletaInicial, new Date()));
+      setOtra(false);
+      setError("");
+    };
+    window.addEventListener("pageshow", alMostrar);
+    return () => window.removeEventListener("pageshow", alMostrar);
+  }, [atletaInicial]);
+
   const cambiar = (parte: Partial<EstadoFormulario>) => setE((s) => ({ ...s, ...parte }));
 
+  const hoy = hoySantiago();
+  const ayer = diaAnterior(hoy);
   const totalDs = digitosATiempo(e.tiempoDigitos);
   const tiempoInvalido = e.tiempoDigitos !== "" && totalDs === null;
   const tiemposSplit = e.splitsDigitos.slice(0, e.nSplits).map(digitosATiempo);
@@ -56,7 +78,7 @@ export function FormularioSesion({ sesionId, atletas, atletaInicial, mostrarSele
   };
 
   const cambiarSplit = (i: number, texto: string, pegado = false) => {
-    const digitos = pegado ? interpretarTiempoPegado(texto) : soloDigitos(texto);
+    const digitos = pegado ? interpretarTiempoPegado(texto) : digitosDelTexto(texto);
     const splitsDigitos = [...e.splitsDigitos];
     splitsDigitos[i] = digitos;
     cambiar({ splitsDigitos });
@@ -159,7 +181,7 @@ export function FormularioSesion({ sesionId, atletas, atletaInicial, mostrarSele
           placeholder="0:00.0"
           aria-invalid={tiempoInvalido}
           value={formatearDigitos(e.tiempoDigitos)}
-          onChange={(ev) => cambiar({ tiempoDigitos: soloDigitos(ev.target.value) })}
+          onChange={(ev) => cambiar({ tiempoDigitos: digitosDelTexto(ev.target.value) })}
           onPaste={(ev) => {
             ev.preventDefault();
             cambiar({ tiempoDigitos: interpretarTiempoPegado(ev.clipboardData.getData("text")) });
@@ -232,6 +254,28 @@ export function FormularioSesion({ sesionId, atletas, atletaInicial, mostrarSele
 
       <details className="rounded-xl border border-zinc-300 p-4">
         <summary className="cursor-pointer text-lg font-medium">Más datos</summary>
+        <div className="mt-4 flex flex-col gap-3">
+          <span className={etiqueta}>Día</span>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={chip(e.dia === "")} onClick={() => cambiar({ dia: "" })}>Hoy</button>
+            <button type="button" className={chip(e.dia === ayer)} onClick={() => cambiar({ dia: ayer })}>Ayer</button>
+          </div>
+          <input
+            type="date"
+            className={campo}
+            max={hoy}
+            value={e.dia}
+            onChange={(ev) => cambiar({ dia: ev.target.value === hoy ? "" : ev.target.value })}
+          />
+          <span className={etiqueta}>Modalidad</span>
+          <div className="flex flex-wrap gap-2">
+            {MODALIDADES.map((m) => (
+              <button key={m.valor} type="button" className={chip(e.modalidad === m.valor)} onClick={() => cambiar({ modalidad: m.valor })}>
+                {m.texto}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="mt-4 grid grid-cols-2 gap-3">
           {extra("spm", "SPM", "decimal")}
           {extra("fcPromedio", "FC promedio")}

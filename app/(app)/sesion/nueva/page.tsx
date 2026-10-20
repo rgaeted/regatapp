@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { requerirUsuario } from "@/lib/acceso/actual";
@@ -34,7 +33,6 @@ export default async function PaginaSesionNueva() {
   const ultimo = (await cookies()).get(COOKIE_ULTIMO_ATLETA)?.value;
   return (
     <FormularioSesion
-      sesionId={randomUUID()}
       atletas={atletas}
       atletaInicial={atletaPorDefecto(atletas, ultimo)}
       mostrarSelector={usuario.rol !== "remero"}

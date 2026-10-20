@@ -40,3 +40,14 @@ export function interpretarTiempoPegado(texto: string): string {
   const min = Math.floor(totalSeg / 60)
   return soloDigitos(String(min * 1000 + (totalSeg % 60) * 10 + d))
 }
+
+/**
+ * Dígitos tecleados a partir del texto que muestra el campo. Para tiempos de
+ * 60 min o más el campo muestra `h:mm:ss.d`, cuyos dígitos visibles no son los
+ * tecleados (70355 se ve "1:10:35.5"): se convierte la hora a minutos.
+ */
+export function digitosDelTexto(texto: string): string {
+  const hms = /^(\d+):(\d+):(\d*)\.?(\d*)$/.exec(texto.trim())
+  if (hms) return soloDigitos(`${Number(hms[1]) * 60 + Number(hms[2])}${hms[3]}${hms[4]}`)
+  return soloDigitos(texto)
+}

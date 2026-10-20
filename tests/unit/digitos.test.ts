@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   digitosATiempo,
+  digitosDelTexto,
   formatearDigitos,
   interpretarTiempoPegado,
   soloDigitos,
@@ -55,5 +56,20 @@ describe('interpretarTiempoPegado', () => {
   it('texto inválido da cadena vacía', () => {
     expect(interpretarTiempoPegado('basura')).toBe('')
     expect(interpretarTiempoPegado('1:75.3')).toBe('')
+  })
+})
+
+describe('digitosDelTexto (ida y vuelta con lo que se ve en el campo)', () => {
+  it.each(['5', '1023', '10203', '70355', '60000', '123456', '9999999'])('%s sobrevive a formatear y releer', (d) => {
+    expect(digitosDelTexto(formatearDigitos(d))).toBe(d)
+  })
+
+  it.each(['1023', '70355', '600000', '123456'])('borrar el último carácter de %s quita el último dígito', (d) => {
+    const visible = formatearDigitos(d)
+    expect(digitosDelTexto(visible.slice(0, -1))).toBe(soloDigitos(d.slice(0, -1)))
+  })
+
+  it('agregar un dígito a un tiempo de más de 60 minutos lo agrega al final', () => {
+    expect(digitosDelTexto(`${formatearDigitos('70355')}6`)).toBe('703556')
   })
 })
