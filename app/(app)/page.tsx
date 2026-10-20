@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requerirUsuario } from "@/lib/acceso/actual";
 import { cerrarSesion } from "./actions";
 
@@ -14,10 +15,12 @@ export default async function Inicio() {
         Foto del ergómetro
         <span className="text-base font-normal">Pronto</span>
       </button>
-      <button type="button" disabled className={boton}>
+      <Link
+        href="/sesion/nueva"
+        className="flex h-20 w-full items-center justify-center rounded-xl bg-zinc-900 text-xl font-semibold text-white"
+      >
         Cargar a mano
-        <span className="text-base font-normal">Pronto</span>
-      </button>
+      </Link>
       <form action={cerrarSesion} className="mt-auto pt-8">
         <button type="submit" className="text-lg text-zinc-700 underline">
           Cerrar sesión

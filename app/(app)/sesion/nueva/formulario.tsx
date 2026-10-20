@@ -1,0 +1,262 @@
+"use client";
+
+import { useMemo, useRef, useState, useTransition } from "react";
+import type { AtletaResumen } from "@/lib/atletas/lista";
+import { digitosATiempo, formatearDigitos, interpretarTiempoPegado, soloDigitos } from "@/lib/sesion/digitos";
+import { armarSesionInput, estadoInicial, type EstadoFormulario } from "@/lib/sesion/formulario";
+import { diferenciaSuma } from "@/lib/sesion/splits";
+import { formatTiempo } from "@/lib/tiempo";
+import { guardarSesionAccion } from "./actions";
+
+const DISTANCIAS = [500, 1000, 2000, 5000, 6000];
+const CANTIDADES = [4, 5, 8];
+const TIPOS: { valor: EstadoFormulario["tipo"]; texto: string }[] = [
+  { valor: "entrenamiento", texto: "Entrenamiento" },
+  { valor: "test", texto: "Test" },
+  { valor: "competencia", texto: "Competencia" },
+];
+// Un split de 500 m cabe en 4 dígitos (m:ss.d): al completarlos se salta al siguiente
+// campo, porque el teclado numérico de iOS no tiene tecla "siguiente".
+const DIGITOS_SPLIT = 4;
+
+const chip = (activo: boolean) =>
+  `h-14 min-w-14 rounded-xl px-4 text-lg font-semibold ${
+    activo ? "bg-zinc-900 text-white" : "bg-zinc-200 text-zinc-900"
+  }`;
+const campo = "h-14 w-full rounded-xl border border-zinc-300 bg-white px-4 text-xl";
+const etiqueta = "text-base font-medium text-zinc-700";
+
+type Props = {
+  sesionId: string;
+  atletas: AtletaResumen[];
+  atletaInicial: string;
+  mostrarSelector: boolean;
+};
+
+export function FormularioSesion({ sesionId, atletas, atletaInicial, mostrarSelector }: Props) {
+  const [e, setE] = useState<EstadoFormulario>(() => estadoInicial(sesionId, atletaInicial, new Date()));
+  const [error, setError] = useState("");
+  const [otra, setOtra] = useState(false);
+  const [pendiente, empezar] = useTransition();
+  const refsSplit = useRef<(HTMLInputElement | null)[]>([]);
+  const refGuardar = useRef<HTMLButtonElement>(null);
+
+  const cambiar = (parte: Partial<EstadoFormulario>) => setE((s) => ({ ...s, ...parte }));
+
+  const totalDs = digitosATiempo(e.tiempoDigitos);
+  const tiempoInvalido = e.tiempoDigitos !== "" && totalDs === null;
+  const tiemposSplit = e.splitsDigitos.slice(0, e.nSplits).map(digitosATiempo);
+  const todosSplits = e.nSplits > 0 && tiemposSplit.every((t) => t !== null);
+  const diferencia =
+    todosSplits && totalDs !== null ? diferenciaSuma(tiemposSplit as number[], totalDs) : 0;
+
+  const elegirCantidad = (n: number) => {
+    const splitsDigitos = Array.from({ length: n }, (_, i) => e.splitsDigitos[i] ?? "");
+    cambiar({ nSplits: n, splitsDigitos });
+  };
+
+  const cambiarSplit = (i: number, texto: string, pegado = false) => {
+    const digitos = pegado ? interpretarTiempoPegado(texto) : soloDigitos(texto);
+    const splitsDigitos = [...e.splitsDigitos];
+    splitsDigitos[i] = digitos;
+    cambiar({ splitsDigitos });
+    if (digitos.length >= DIGITOS_SPLIT) irAlSiguiente(i);
+  };
+
+  const irAlSiguiente = (i: number) => {
+    const siguiente = refsSplit.current[i + 1];
+    if (siguiente) siguiente.focus();
+    else refGuardar.current?.focus();
+  };
+
+  const guardar = () => {
+    setError("");
+    const estado = { ...e, fecha: new Date().toISOString() };
+    const armado = armarSesionInput(estado);
+    if (!armado.ok) {
+      setError(Object.values(armado.errores)[0] ?? "Revisa los datos.");
+      return;
+    }
+    empezar(async () => {
+      // En éxito la acción redirige y esta promesa no resuelve con valor.
+      const r = await guardarSesionAccion(estado);
+      if (r?.error) setError(r.error);
+    });
+  };
+
+  const extra = (clave: keyof EstadoFormulario["extras"], texto: string, modo: "numeric" | "decimal" | "text" = "numeric") => (
+    <label className="flex flex-col gap-1">
+      <span className={etiqueta}>{texto}</span>
+      <input
+        className={campo}
+        inputMode={modo}
+        value={e.extras[clave]}
+        onChange={(ev) => cambiar({ extras: { ...e.extras, [clave]: ev.target.value } })}
+      />
+    </label>
+  );
+
+  const resumenSuma = useMemo(() => {
+    if (diferencia === 0 || totalDs === null) return "";
+    const suma = totalDs + diferencia;
+    return `Los splits suman ${formatTiempo(suma)}; el total es ${formatTiempo(totalDs)}.`;
+  }, [diferencia, totalDs]);
+
+  return (
+    <form
+      className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pt-8 text-lg"
+      onSubmit={(ev) => {
+        ev.preventDefault();
+        guardar();
+      }}
+    >
+      <h1 className="text-2xl font-semibold text-zinc-900">Nueva sesión</h1>
+
+      {mostrarSelector && (
+        <label className="flex flex-col gap-1">
+          <span className={etiqueta}>Atleta</span>
+          <select className={campo} value={e.atletaId} onChange={(ev) => cambiar({ atletaId: ev.target.value })}>
+            {atletas.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.apellido}, {a.nombre}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {TIPOS.map((t) => (
+          <button key={t.valor} type="button" className={chip(e.tipo === t.valor)} onClick={() => cambiar({ tipo: t.valor })}>
+            {t.texto}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className={etiqueta}>Distancia (m)</span>
+        <div className="flex flex-wrap gap-2">
+          {DISTANCIAS.map((d) => (
+            <button key={d} type="button" className={chip(e.distancia === String(d))} onClick={() => cambiar({ distancia: String(d) })}>
+              {d}
+            </button>
+          ))}
+        </div>
+        <input
+          className={campo}
+          inputMode="numeric"
+          placeholder="Otra distancia"
+          value={e.distancia}
+          onChange={(ev) => cambiar({ distancia: ev.target.value.replace(/\D/g, "") })}
+        />
+      </div>
+
+      <label className="flex flex-col gap-1">
+        <span className={etiqueta}>Tiempo total</span>
+        <input
+          className={`${campo} ${tiempoInvalido ? "border-red-600 text-red-700" : ""}`}
+          inputMode="numeric"
+          placeholder="0:00.0"
+          aria-invalid={tiempoInvalido}
+          value={formatearDigitos(e.tiempoDigitos)}
+          onChange={(ev) => cambiar({ tiempoDigitos: soloDigitos(ev.target.value) })}
+          onPaste={(ev) => {
+            ev.preventDefault();
+            cambiar({ tiempoDigitos: interpretarTiempoPegado(ev.clipboardData.getData("text")) });
+          }}
+        />
+        {tiempoInvalido && <span className="text-base text-red-700">Los segundos deben ser menores que 60.</span>}
+      </label>
+
+      <div className="flex flex-col gap-2">
+        <span className={etiqueta}>Splits</span>
+        <div className="flex flex-wrap gap-2">
+          {CANTIDADES.map((n) => (
+            <button key={n} type="button" className={chip(e.nSplits === n && !otra)} onClick={() => { setOtra(false); elegirCantidad(n); }}>
+              {n}
+            </button>
+          ))}
+          <button type="button" className={chip(otra)} onClick={() => { setOtra(true); elegirCantidad(0); }}>
+            Otra
+          </button>
+          {e.nSplits > 0 && (
+            <button type="button" className={chip(false)} onClick={() => { setOtra(false); elegirCantidad(0); }}>
+              Sin splits
+            </button>
+          )}
+        </div>
+        {otra && (
+          <input
+            className={campo}
+            inputMode="numeric"
+            placeholder="¿Cuántos splits?"
+            value={e.nSplits || ""}
+            onChange={(ev) => elegirCantidad(Math.min(30, Number(ev.target.value.replace(/\D/g, "")) || 0))}
+          />
+        )}
+        {e.nSplits > 0 && (
+          <div className="grid grid-cols-2 gap-2">
+            {Array.from({ length: e.nSplits }, (_, i) => {
+              const digitos = e.splitsDigitos[i] ?? "";
+              const malo = digitos !== "" && digitosATiempo(digitos) === null;
+              return (
+                <label key={i} className="flex flex-col gap-1">
+                  <span className="text-sm text-zinc-600">Split {i + 1}</span>
+                  <input
+                    ref={(el) => { refsSplit.current[i] = el; }}
+                    className={`${campo} ${malo ? "border-red-600 text-red-700" : ""}`}
+                    inputMode="numeric"
+                    enterKeyHint={i === e.nSplits - 1 ? "done" : "next"}
+                    placeholder="0:00.0"
+                    aria-invalid={malo}
+                    value={formatearDigitos(digitos)}
+                    onChange={(ev) => cambiarSplit(i, ev.target.value)}
+                    onPaste={(ev) => {
+                      ev.preventDefault();
+                      cambiarSplit(i, ev.clipboardData.getData("text"), true);
+                    }}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter") {
+                        ev.preventDefault();
+                        irAlSiguiente(i);
+                      }
+                    }}
+                  />
+                </label>
+              );
+            })}
+          </div>
+        )}
+        {resumenSuma && <p className="rounded-lg bg-amber-100 px-3 py-2 text-base text-amber-900">{resumenSuma}</p>}
+      </div>
+
+      <details className="rounded-xl border border-zinc-300 p-4">
+        <summary className="cursor-pointer text-lg font-medium">Más datos</summary>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          {extra("spm", "SPM", "decimal")}
+          {extra("fcPromedio", "FC promedio")}
+          {extra("fcMaxima", "FC máxima")}
+          {extra("calorias", "Calorías")}
+          {extra("drag", "Drag")}
+          {extra("rpe", "RPE (1–10)")}
+        </div>
+        <div className="mt-3 flex flex-col gap-3">
+          {extra("descripcion", "Descripción", "text")}
+          {extra("notas", "Notas", "text")}
+        </div>
+      </details>
+
+      <div className="sticky bottom-0 -mx-6 mt-auto flex flex-col gap-2 bg-white/95 px-6 pb-6 pt-3">
+        {error && <p role="alert" className="text-base font-medium text-red-700">{error}</p>}
+        <button
+          ref={refGuardar}
+          type="submit"
+          disabled={pendiente || tiempoInvalido}
+          className="h-16 w-full rounded-xl bg-zinc-900 text-xl font-semibold text-white disabled:opacity-50"
+        >
+          {pendiente ? "Guardando…" : "Guardar"}
+        </button>
+      </div>
+    </form>
+  );
+}
