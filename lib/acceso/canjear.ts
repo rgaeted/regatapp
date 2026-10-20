@@ -1,5 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { accesoVigente, marcarUsado, resolverEnlace, type ResultadoEnlace } from "@/lib/acceso/enlace";
+import {
+  accesoVigente,
+  FORMATO_TOKEN,
+  marcarUsado,
+  resolverEnlace,
+  type ResultadoEnlace,
+} from "@/lib/acceso/enlace";
 import { esErrorTransitorio } from "@/lib/acceso/errores-auth";
 
 /**
@@ -42,4 +48,15 @@ export async function canjearEnlace(
 
   await marcarUsado(admin, token);
   return { ok: true };
+}
+
+/**
+ * A dónde vuelve /entrar tras un canje fallido. El token solo viaja de vuelta
+ * para "reintentar" (sigue siendo válido) y solo si tiene el formato de un
+ * hashed_token: nunca se refleja un valor sin validar.
+ */
+export function rutaFalloEntrar(motivo: MotivoFallo, token: string): string {
+  const q = new URLSearchParams({ e: motivo });
+  if (motivo === "reintentar" && FORMATO_TOKEN.test(token)) q.set("t", token);
+  return `/entrar?${q.toString()}`;
 }
