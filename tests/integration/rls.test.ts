@@ -7,11 +7,15 @@ import {
   asignar,
   BUCKET_CAPTURAS,
   clienteAnonimo,
+  consultaCatalogo,
   consultaRest,
   crearAtleta,
   crearSesion,
   crearUsuario,
   limpiar,
+  olvidarUsuario,
+  puedeConsultarCatalogo,
+  registrarCaptura,
 } from "./helpers";
 
 type Usuario = { id: string; cliente: SupabaseClient };
@@ -44,12 +48,13 @@ async function hoySantiago(): Promise<string> {
 describe("1. remero A no ve sesiones de B", () => {
   let remeroA: Usuario;
   let atletaA: string;
+  let atletaB: string;
   let sesionA: string;
   let sesionB: string;
 
   beforeAll(async () => {
     atletaA = await crearAtleta();
-    const atletaB = await crearAtleta();
+    atletaB = await crearAtleta();
     remeroA = await crearUsuario({ rol: "remero", atletaId: atletaA });
     sesionA = await crearSesion(atletaA);
     sesionB = await crearSesion(atletaB);
@@ -76,6 +81,15 @@ describe("1. remero A no ve sesiones de B", () => {
     expect(vista.error).toBeNull();
     expect(vista.data!.map((r) => r.id)).toEqual([sesionA]);
     expect(vista.data![0].watts).not.toBeNull();
+  });
+
+  it("atleta de B → [] sin error", async () => {
+    const { data, error } = await remeroA.cliente.from("atleta").select("id").eq("id", atletaB);
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
+    const propio = await remeroA.cliente.from("atleta").select("id");
+    expect(propio.error).toBeNull();
+    expect(propio.data!.map((r) => r.id)).toEqual([atletaA]);
   });
 
   it("anon no ve ninguna sesión", async () => {
@@ -502,19 +516,20 @@ describe("11. vigencia de asignaciones en hora de Santiago", () => {
   let entrenador: Usuario;
   let manana: string;
   let ayer: string;
-  let hoy: string;
 
   beforeAll(async () => {
     entrenador = await crearUsuario({ rol: "entrenador" });
     manana = await crearAtleta();
     ayer = await crearAtleta();
-    hoy = await hoySantiago();
+    const hoy = await hoySantiago();
     await asignar(entrenador.id, manana, sumarDias(hoy, 1), null);
     await asignar(entrenador.id, ayer, sumarDias(hoy, -30), sumarDias(hoy, -1));
   });
   afterAll(limpiar);
 
   it("hoy_santiago() es la fecha civil de America/Santiago", async () => {
+    // Ambas lecturas dentro del it: leer "hoy" en beforeAll falla cerca de medianoche.
+    const hoy = await hoySantiago();
     const local = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
     expect(hoy).toBe(local);
   });
@@ -527,7 +542,7 @@ describe("11. vigencia de asignaciones en hora de Santiago", () => {
       .select("desde")
       .single();
     expect(error).toBeNull();
-    expect(data!.desde).toBe(hoy);
+    expect(data!.desde).toBe(await hoySantiago());
   });
 
   // Un cliente puede pedir otra zona horaria a PostgREST; entrena_a no debe depender de ella.
@@ -734,5 +749,473 @@ describe("14. concept2_result_id y origen api_concept2 solo desde el servidor", 
   it("una sesión importada sigue editable en otros campos por el remero", async () => {
     const { error } = await remero.cliente.from("sesion").update({ rpe: 7 }).eq("id", sesion);
     expect(error).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Endurecimiento final (migración 000005)
+// ---------------------------------------------------------------------------
+
+const cuenta = async (tabla: string, filtro: Record<string, string>) => {
+  let q = admin().from(tabla).select("*", { count: "exact", head: true });
+  for (const [col, val] of Object.entries(filtro)) q = q.eq(col, val);
+  const { count, error } = await q;
+  if (error) throw new Error(`${tabla}: ${error.message}`);
+  return count;
+};
+
+describe("15. borrar usuarios y atletas no choca con las FK", () => {
+  afterAll(limpiar);
+
+  it("borrar el usuario de un remero que creó sesiones y capturas funciona", async () => {
+    const atleta = await crearAtleta();
+    const remero = await crearUsuario({ rol: "remero", atletaId: atleta });
+    const { data: c, error: ec } = await remero.cliente
+      .from("captura")
+      .insert({ storage_path: `${remero.id}/f.jpg`, subida_por: remero.id })
+      .select("id")
+      .single();
+    expect(ec).toBeNull();
+    registrarCaptura(c!.id);
+    const { data: s, error: es } = await remero.cliente
+      .from("sesion")
+      .insert({ ...sesionNueva(atleta, remero.id), captura_id: c!.id })
+      .select("id")
+      .single();
+    expect(es).toBeNull();
+
+    const { error } = await admin().auth.admin.deleteUser(remero.id);
+    expect(error).toBeNull();
+    olvidarUsuario(remero.id);
+
+    const { data: sesion } = await admin().from("sesion").select("creado_por, captura_id").eq("id", s!.id).single();
+    expect(sesion).toEqual({ creado_por: null, captura_id: c!.id });
+    const { data: cap } = await admin().from("captura").select("subida_por").eq("id", c!.id).single();
+    expect(cap).toEqual({ subida_por: null });
+    expect(await cuenta("perfil", { user_id: remero.id })).toBe(0);
+  });
+
+  it("borrar el usuario de un entrenador que registró consentimientos y generó enlaces funciona", async () => {
+    const atleta = await crearAtleta();
+    const remero = await crearUsuario({ rol: "remero", atletaId: atleta });
+    const entrenador = await crearUsuario({ rol: "entrenador" });
+    await asignar(entrenador.id, atleta, "2020-01-01");
+    const { data: cons, error: ec } = await entrenador.cliente
+      .from("consentimiento")
+      .insert({
+        atleta_id: atleta,
+        otorgado_por_nombre: "Apoderado 2",
+        relacion: "apoderado",
+        medio: "papel",
+        version_texto: "v1",
+        otorgado_en: "2026-01-01",
+        registrado_por: entrenador.id,
+      })
+      .select("id")
+      .single();
+    expect(ec).toBeNull();
+    const token = `h-${entrenador.id}`;
+    const { error: el } = await admin().from("enlace_acceso").insert({
+      usuario_id: remero.id,
+      token_hash: token,
+      creado_por: entrenador.id,
+      vence_en: new Date(Date.now() + 864e5).toISOString(),
+    });
+    expect(el).toBeNull();
+
+    const { error } = await admin().auth.admin.deleteUser(entrenador.id);
+    expect(error).toBeNull();
+    olvidarUsuario(entrenador.id);
+
+    const { data: c } = await admin().from("consentimiento").select("registrado_por").eq("id", cons!.id).single();
+    expect(c).toEqual({ registrado_por: null });
+    const { data: e } = await admin().from("enlace_acceso").select("creado_por").eq("token_hash", token).single();
+    expect(e).toEqual({ creado_por: null });
+    expect(await cuenta("asignacion_entrenador", { entrenador_id: entrenador.id })).toBe(0);
+  });
+
+  it("borrar un atleta que tiene perfil de remero funciona y suelta el perfil", async () => {
+    const atleta = await crearAtleta();
+    const remero = await crearUsuario({ rol: "remero", atletaId: atleta });
+    await crearSesion(atleta, { creado_por: remero.id });
+
+    const { error } = await admin().from("atleta").delete().eq("id", atleta);
+    expect(error).toBeNull();
+
+    expect(await cuenta("atleta", { id: atleta })).toBe(0);
+    expect(await cuenta("sesion", { atleta_id: atleta })).toBe(0);
+    const { data: p } = await admin().from("perfil").select("rol, atleta_id").eq("user_id", remero.id).single();
+    expect(p).toEqual({ rol: "remero", atleta_id: null });
+  });
+});
+
+describe("16. entrena_a exige perfil de entrenador vigente", () => {
+  let atleta: string;
+  let sesion: string;
+
+  beforeAll(async () => {
+    atleta = await crearAtleta();
+    sesion = await crearSesion(atleta);
+  });
+  afterAll(limpiar);
+
+  const ve = async (u: Usuario) => {
+    const a = await u.cliente.from("atleta").select("id").eq("id", atleta);
+    const s = await u.cliente.from("sesion").select("id").eq("id", sesion);
+    const c = await u.cliente.from("consentimiento").select("id").eq("atleta_id", atleta);
+    expect(a.error).toBeNull();
+    expect(s.error).toBeNull();
+    expect(c.error).toBeNull();
+    return [a.data!.length, s.data!.length, c.data!.length];
+  };
+
+  it("un entrenador degradado a remero pierde el acceso de inmediato", async () => {
+    const entrenador = await crearUsuario({ rol: "entrenador" });
+    await asignar(entrenador.id, atleta, "2020-01-01");
+    expect(await ve(entrenador)).toEqual([1, 1, 1]);
+    const { error } = await admin().from("perfil").update({ rol: "remero" }).eq("user_id", entrenador.id);
+    expect(error).toBeNull();
+    // Mismo cliente y mismo JWT: la asignación sigue, el rol no.
+    expect(await ve(entrenador)).toEqual([0, 0, 0]);
+    const ins = await entrenador.cliente.from("sesion").insert(sesionNueva(atleta, entrenador.id));
+    expect(ins.error?.code).toBe(RLS);
+    expect(await cuenta("sesion", { atleta_id: atleta, creado_por: entrenador.id })).toBe(0);
+  });
+
+  it("un entrenador sin perfil pierde el acceso de inmediato", async () => {
+    const entrenador = await crearUsuario({ rol: "entrenador" });
+    await asignar(entrenador.id, atleta, "2020-01-01");
+    expect(await ve(entrenador)).toEqual([1, 1, 1]);
+    const { error } = await admin().from("perfil").delete().eq("user_id", entrenador.id);
+    expect(error).toBeNull();
+    expect(await ve(entrenador)).toEqual([0, 0, 0]);
+  });
+});
+
+describe("17. entrenador con asignación vencida no lee nada del atleta", () => {
+  let vencido: Usuario;
+  let vigente: Usuario;
+  let atleta: string;
+  let remero: Usuario;
+  let sesion: string;
+  let captura: string;
+
+  beforeAll(async () => {
+    atleta = await crearAtleta();
+    remero = await crearUsuario({ rol: "remero", atletaId: atleta });
+    const { data: c, error: ec } = await remero.cliente
+      .from("captura")
+      .insert({ storage_path: `${remero.id}/v.jpg`, subida_por: remero.id })
+      .select("id")
+      .single();
+    if (ec) throw new Error(ec.message);
+    captura = c.id as string;
+    const { data: s, error: es } = await remero.cliente
+      .from("sesion")
+      .insert({ ...sesionNueva(atleta, remero.id), captura_id: captura })
+      .select("id")
+      .single();
+    if (es) throw new Error(es.message);
+    sesion = s.id as string;
+    const { error } = await admin().from("split").insert({ sesion_id: sesion, orden: 1, tiempo_ds: 1000 });
+    if (error) throw new Error(error.message);
+    const hoy = await hoySantiago();
+    vencido = await crearUsuario({ rol: "entrenador" });
+    vigente = await crearUsuario({ rol: "entrenador" });
+    await asignar(vencido.id, atleta, sumarDias(hoy, -30), sumarDias(hoy, -1));
+    await asignar(vigente.id, atleta, sumarDias(hoy, -30), null);
+  });
+  afterAll(limpiar);
+
+  const lee = async (u: Usuario) => {
+    const consultas = await Promise.all([
+      u.cliente.from("split").select("id").eq("sesion_id", sesion),
+      u.cliente.from("captura").select("id").eq("id", captura),
+      u.cliente.from("consentimiento").select("id").eq("atleta_id", atleta),
+      u.cliente.from("perfil").select("user_id").eq("user_id", remero.id),
+    ]);
+    return consultas.map((r) => {
+      expect(r.error).toBeNull();
+      return r.data!.length;
+    });
+  };
+
+  it("control: con asignación vigente ve split, captura, consentimiento y perfil", async () => {
+    expect(await lee(vigente)).toEqual([1, 1, 1, 1]);
+  });
+
+  it("con asignación vencida recibe [] en las cuatro tablas", async () => {
+    expect(await lee(vencido)).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe("18. split exige consentimiento vigente y atleta activo", () => {
+  let remeroRev: Usuario;
+  let remeroInact: Usuario;
+  let entrenador: Usuario;
+  let sesionRev: string;
+  let sesionInact: string;
+  let splitRev: string;
+  let splitInact: string;
+
+  const splitDe = async (sesion: string) => {
+    const { data, error } = await admin()
+      .from("split")
+      .insert({ sesion_id: sesion, orden: 1, tiempo_ds: 1000 })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    return data.id as string;
+  };
+
+  beforeAll(async () => {
+    const revocado = await crearAtleta();
+    const inactivo = await crearAtleta();
+    remeroRev = await crearUsuario({ rol: "remero", atletaId: revocado });
+    remeroInact = await crearUsuario({ rol: "remero", atletaId: inactivo });
+    entrenador = await crearUsuario({ rol: "entrenador" });
+    await asignar(entrenador.id, revocado, "2020-01-01");
+    await asignar(entrenador.id, inactivo, "2020-01-01");
+    sesionRev = await crearSesion(revocado);
+    sesionInact = await crearSesion(inactivo);
+    splitRev = await splitDe(sesionRev);
+    splitInact = await splitDe(sesionInact);
+    const r1 = await admin()
+      .from("consentimiento")
+      .update({ revocado_en: new Date().toISOString() })
+      .eq("atleta_id", revocado);
+    const r2 = await admin().from("atleta").update({ activo: false }).eq("id", inactivo);
+    if (r1.error || r2.error) throw new Error(`setup: ${r1.error?.message ?? r2.error?.message}`);
+  });
+  afterAll(limpiar);
+
+  it.each([
+    ["consentimiento revocado", () => [remeroRev, sesionRev] as const],
+    ["atleta inactivo", () => [remeroInact, sesionInact] as const],
+  ])("%s: ni el remero ni el entrenador insertan splits", async (_, datos) => {
+    const [remero, sesion] = datos();
+    for (const u of [remero, entrenador]) {
+      const { error } = await u.cliente.from("split").insert({ sesion_id: sesion, orden: 2, tiempo_ds: 900 });
+      expect(error?.code).toBe(RLS);
+    }
+    expect(await cuenta("split", { sesion_id: sesion })).toBe(1);
+  });
+
+  it.each([
+    ["consentimiento revocado", () => [remeroRev, splitRev] as const],
+    ["atleta inactivo", () => [remeroInact, splitInact] as const],
+  ])("%s: ni el remero ni el entrenador modifican splits", async (_, datos) => {
+    const [remero, split] = datos();
+    for (const u of [remero, entrenador]) {
+      const { error } = await u.cliente.from("split").update({ tiempo_ds: 1 }).eq("id", split);
+      expect(error?.code).toBe(RLS);
+    }
+    const { data } = await admin().from("split").select("tiempo_ds").eq("id", split).single();
+    expect(data).toEqual({ tiempo_ds: 1000 });
+  });
+});
+
+describe("19. sesion.creado_por no se puede cambiar desde el cliente", () => {
+  let remero: Usuario;
+  let otro: Usuario;
+  let sesion: string;
+
+  beforeAll(async () => {
+    const atleta = await crearAtleta();
+    remero = await crearUsuario({ rol: "remero", atletaId: atleta });
+    otro = await crearUsuario({ rol: "entrenador" });
+    const { data, error } = await remero.cliente
+      .from("sesion")
+      .insert(sesionNueva(atleta, remero.id))
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    sesion = data.id as string;
+  });
+  afterAll(limpiar);
+
+  const creadoPor = async () =>
+    (await admin().from("sesion").select("creado_por").eq("id", sesion).single()).data!.creado_por;
+
+  it("a otro usuario → error", async () => {
+    const { error } = await remero.cliente.from("sesion").update({ creado_por: otro.id }).eq("id", sesion);
+    expect(error?.code).toBe(RLS);
+    expect(await creadoPor()).toBe(remero.id);
+  });
+
+  it("a null → error", async () => {
+    const { error } = await remero.cliente.from("sesion").update({ creado_por: null }).eq("id", sesion);
+    expect(error?.code).toBe(RLS);
+    expect(await creadoPor()).toBe(remero.id);
+  });
+
+  it("editar otros campos sigue permitido", async () => {
+    const { error } = await remero.cliente.from("sesion").update({ notas: "ok" }).eq("id", sesion);
+    expect(error).toBeNull();
+  });
+
+  it("el service role sí puede", async () => {
+    const { error } = await admin().from("sesion").update({ creado_por: otro.id }).eq("id", sesion);
+    expect(error).toBeNull();
+    expect(await creadoPor()).toBe(otro.id);
+  });
+});
+
+describe("20. consentimiento: el cliente solo puede revocarlo", () => {
+  let entrenador: Usuario;
+  let adminU: Usuario;
+  let atleta: string;
+  let consentimiento: string;
+
+  beforeAll(async () => {
+    atleta = await crearAtleta();
+    entrenador = await crearUsuario({ rol: "entrenador" });
+    adminU = await crearUsuario({ rol: "admin" });
+    await asignar(entrenador.id, atleta, "2020-01-01");
+    const { data, error } = await admin().from("consentimiento").select("id").eq("atleta_id", atleta).single();
+    if (error) throw new Error(error.message);
+    consentimiento = data.id as string;
+  });
+  afterAll(limpiar);
+
+  const fila = async () =>
+    (
+      await admin()
+        .from("consentimiento")
+        .select("otorgado_por_nombre, revocado_en")
+        .eq("id", consentimiento)
+        .single()
+    ).data!;
+
+  it("cambiar otro campo → error, también para el admin con su JWT", async () => {
+    for (const u of [entrenador, adminU]) {
+      const { error } = await u.cliente
+        .from("consentimiento")
+        .update({ otorgado_por_nombre: "Falso" })
+        .eq("id", consentimiento);
+      expect(error?.code).toBe(RLS);
+    }
+    expect(await fila()).toEqual({ otorgado_por_nombre: "Apoderado Test", revocado_en: null });
+  });
+
+  it("revocar y a la vez cambiar otro campo → error", async () => {
+    const { error } = await entrenador.cliente
+      .from("consentimiento")
+      .update({ revocado_en: new Date().toISOString(), version_texto: "v9" })
+      .eq("id", consentimiento);
+    expect(error?.code).toBe(RLS);
+    expect((await fila()).revocado_en).toBeNull();
+  });
+
+  it("revocar (null → fecha) → ok", async () => {
+    const { error } = await entrenador.cliente
+      .from("consentimiento")
+      .update({ revocado_en: new Date().toISOString() })
+      .eq("id", consentimiento);
+    expect(error).toBeNull();
+    expect((await fila()).revocado_en).not.toBeNull();
+  });
+
+  it("des-revocar o re-revocar → error", async () => {
+    const antes = (await fila()).revocado_en;
+    for (const revocado_en of [null, "2020-01-01T00:00:00Z"]) {
+      const { error } = await entrenador.cliente
+        .from("consentimiento")
+        .update({ revocado_en })
+        .eq("id", consentimiento);
+      expect(error?.code).toBe(RLS);
+    }
+    expect((await fila()).revocado_en).toBe(antes);
+  });
+
+  it("el service role sí puede corregirlo", async () => {
+    const { error } = await admin().from("consentimiento").update({ revocado_en: null }).eq("id", consentimiento);
+    expect(error).toBeNull();
+    expect((await fila()).revocado_en).toBeNull();
+  });
+
+  const nuevo = (registrado_por: string | null) => ({
+    atleta_id: atleta,
+    otorgado_por_nombre: "Apoderado Insert",
+    relacion: "apoderado",
+    medio: "papel",
+    version_texto: "v1",
+    otorgado_en: "2026-01-01",
+    registrado_por,
+  });
+
+  it("insertar con registrado_por ajeno o null → error; con el propio → ok", async () => {
+    for (const r of [adminU.id, null]) {
+      const { error } = await entrenador.cliente.from("consentimiento").insert(nuevo(r));
+      expect(error?.code).toBe(RLS);
+    }
+    expect(await cuenta("consentimiento", { atleta_id: atleta, otorgado_por_nombre: "Apoderado Insert" })).toBe(0);
+    const { error } = await entrenador.cliente.from("consentimiento").insert(nuevo(entrenador.id));
+    expect(error).toBeNull();
+    expect(await cuenta("consentimiento", { atleta_id: atleta, registrado_por: entrenador.id })).toBe(1);
+  });
+});
+
+describe("21. captura.storage_path queda en la carpeta del usuario", () => {
+  let remero: Usuario;
+  let otro: Usuario;
+
+  beforeAll(async () => {
+    remero = await crearUsuario({ rol: "remero", atletaId: await crearAtleta() });
+    otro = await crearUsuario({ rol: "remero", atletaId: await crearAtleta() });
+  });
+  afterAll(limpiar);
+
+  it.each([
+    ["carpeta ajena", () => `${otro.id}/x.jpg`],
+    ["sin carpeta", () => "x.jpg"],
+    ["con ..", () => `${remero.id}/../${otro.id}/x.jpg`],
+  ])("insertar con %s → error", async (_, ruta) => {
+    const storage_path = ruta();
+    const { error } = await remero.cliente.from("captura").insert({ storage_path, subida_por: remero.id });
+    expect(error?.code).toBe(RLS);
+    expect(await cuenta("captura", { storage_path })).toBe(0);
+  });
+
+  it("en su carpeta → ok; luego storage_path no se puede cambiar", async () => {
+    const { data, error } = await remero.cliente
+      .from("captura")
+      .insert({ storage_path: `${remero.id}/ok.jpg`, subida_por: remero.id })
+      .select("id")
+      .single();
+    expect(error).toBeNull();
+    const upd = await remero.cliente
+      .from("captura")
+      .update({ storage_path: `${remero.id}/otra.jpg` })
+      .eq("id", data!.id);
+    expect(upd.error?.code).toBe(RLS);
+    const { data: c } = await admin().from("captura").select("storage_path").eq("id", data!.id).single();
+    expect(c).toEqual({ storage_path: `${remero.id}/ok.jpg` });
+    const otros = await remero.cliente.from("captura").update({ modelo: "m" }).eq("id", data!.id);
+    expect(otros.error).toBeNull();
+  });
+});
+
+describe("22. anon y authenticated sin TRUNCATE, REFERENCES ni TRIGGER", () => {
+  // En CI (Supabase local) psql existe en el runner: ahí el test nunca se omite.
+  it.skipIf(!puedeConsultarCatalogo() && !process.env.CI)("ninguna tabla ni vista de public los concede", async () => {
+    const prohibidos = await consultaCatalogo(`
+      select c.relname, r.rolname, a.privilege_type
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      cross join lateral aclexplode(c.relacl) a
+      join pg_roles r on r.oid = a.grantee
+      where n.nspname = 'public'
+        and c.relkind in ('r', 'v', 'm', 'p', 'f')
+        and r.rolname in ('anon', 'authenticated')
+        and a.privilege_type in ('TRUNCATE', 'REFERENCES', 'TRIGGER')`);
+    expect(prohibidos).toEqual([]);
+    // Lo que RLS necesita sigue concedido.
+    const sesion = await consultaCatalogo(`
+      select p as privilegio, has_table_privilege('authenticated', 'public.sesion', p) as tiene
+      from unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE']) p`);
+    expect(sesion).toEqual(
+      ["SELECT", "INSERT", "UPDATE", "DELETE"].map((privilegio) => ({ privilegio, tiene: true })),
+    );
   });
 });

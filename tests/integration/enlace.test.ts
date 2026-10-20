@@ -181,8 +181,6 @@ describe('generar y resolver enlaces', () => {
   it('atleta borrado -> inexistente o sin_acceso, sin lanzar', async () => {
     const { atletaId, usuarioId } = await atletaConUsuario()
     const token = await nuevoEnlace(usuarioId)
-    // perfil.atleta_id no tiene ON DELETE: se suelta el perfil antes de borrar al atleta.
-    await admin().from('perfil').update({ atleta_id: null }).eq('user_id', usuarioId)
     await admin().from('registro_acceso').delete().eq('atleta_id', atletaId) // evita filas huérfanas (FK set null)
     const { error } = await admin().from('atleta').delete().eq('id', atletaId)
     expect(error).toBeNull()

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -36,10 +37,63 @@ const opciones = { auth: { persistSession: false, autoRefreshToken: false } };
 const usuariosCreados: string[] = [];
 const atletasCreados: string[] = [];
 const sesionesCreadas: string[] = [];
+const capturasCreadas: string[] = [];
 
 // Para que limpiar() borre usuarios creados fuera de los helpers (p. ej. por lib/acceso).
 export function registrarUsuario(id: string): void {
   if (!usuariosCreados.includes(id)) usuariosCreados.push(id);
+}
+
+// Un test que ya borró al usuario lo saca de la lista (deleteUser repetido falla).
+export function olvidarUsuario(id: string): void {
+  const i = usuariosCreados.indexOf(id);
+  if (i >= 0) usuariosCreados.splice(i, 1);
+}
+
+// Capturas que sobreviven a su dueño (subida_por queda en NULL al borrarlo).
+export function registrarCaptura(id: string): void {
+  if (!capturasCreadas.includes(id)) capturasCreadas.push(id);
+}
+
+function esLocal(): boolean {
+  const host = new URL(URL_SUPABASE).hostname;
+  return host === "localhost" || host === "127.0.0.1";
+}
+
+const DB_URL_LOCAL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+
+/**
+ * Hay forma de consultar el catálogo como dueño de la base: remoto, Management
+ * API con SUPABASE_ACCESS_TOKEN (del proyecto ya verificado por la guardia);
+ * local, psql contra la base de `supabase start`.
+ */
+export function puedeConsultarCatalogo(): boolean {
+  if (!esLocal()) return Boolean(process.env.SUPABASE_ACCESS_TOKEN && process.env.SUPABASE_PROJECT_REF);
+  return spawnSync("psql", ["--version"], { encoding: "utf8" }).status === 0;
+}
+
+/** Consulta de catálogo (p. ej. privilegios) que PostgREST no expone. Solo lectura. */
+export async function consultaCatalogo(sql: string): Promise<unknown[]> {
+  const envuelta = `select coalesce(json_agg(t), '[]'::json) as filas from (${sql}) t`;
+  if (!esLocal()) {
+    const r = await fetch(
+      `https://api.supabase.com/v1/projects/${process.env.SUPABASE_PROJECT_REF}/database/query`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.SUPABASE_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query: envuelta }),
+      },
+    );
+    if (!r.ok) throw new Error(`consultaCatalogo: HTTP ${r.status}`);
+    const filas = (await r.json()) as Array<{ filas: unknown[] }>;
+    return filas[0].filas;
+  }
+  const r = spawnSync("psql", [DB_URL_LOCAL, "-At", "-c", envuelta], { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`consultaCatalogo: ${r.stderr}`);
+  return JSON.parse(r.stdout) as unknown[];
 }
 
 let clienteAdmin: SupabaseClient | undefined;
@@ -173,9 +227,12 @@ export async function crearSesion(
   return id;
 }
 
-// Borra todo lo creado por los helpers, en orden seguro: primero las filas que
-// dependen de usuarios/atletas (varias FK a auth.users y atleta no tienen ON
-// DELETE), luego atletas y al final los usuarios. Sigue ante errores y lanza al final.
+// Borra todo lo creado por los helpers. Desde la 000005 todas las FK a auth.users
+// y atleta tienen ON DELETE (cascade o set null), así que el orden ya no evita
+// errores: solo se borra antes lo que con SET NULL quedaría huérfano e
+// inalcanzable (capturas, registro_acceso). El resto cae en cascada al borrar
+// atletas (sesion, split, consentimiento, asignacion) y usuarios (perfil,
+// asignacion, enlace_acceso). Sigue ante errores y lanza al final.
 export async function limpiar(): Promise<void> {
   const db = admin();
   const errores: string[] = [];
@@ -186,22 +243,12 @@ export async function limpiar(): Promise<void> {
   const u = [...usuariosCreados];
   const a = [...atletasCreados];
   const s = [...sesionesCreadas];
+  const c = [...capturasCreadas];
 
   if (s.length) await intentar("sesion/id", db.from("sesion").delete().in("id", s));
-  if (u.length) await intentar("sesion/creado_por", db.from("sesion").delete().in("creado_por", u));
-  if (a.length) await intentar("sesion/atleta", db.from("sesion").delete().in("atleta_id", a));
   if (u.length) await intentar("captura", db.from("captura").delete().in("subida_por", u));
-  if (a.length) await intentar("consentimiento/atleta", db.from("consentimiento").delete().in("atleta_id", a));
-  if (u.length) await intentar("consentimiento/registrado_por", db.from("consentimiento").delete().in("registrado_por", u));
-  if (u.length) await intentar("asignacion/entrenador", db.from("asignacion_entrenador").delete().in("entrenador_id", u));
-  if (a.length) await intentar("asignacion/atleta", db.from("asignacion_entrenador").delete().in("atleta_id", a));
-  if (u.length) await intentar("perfil/user", db.from("perfil").delete().in("user_id", u));
-  if (a.length) await intentar("perfil/atleta", db.from("perfil").delete().in("atleta_id", a));
-  if (u.length) {
-    await intentar("enlace/usuario", db.from("enlace_acceso").delete().in("usuario_id", u));
-    await intentar("enlace/creado_por", db.from("enlace_acceso").delete().in("creado_por", u));
-    await intentar("registro/usuario", db.from("registro_acceso").delete().in("usuario_id", u));
-  }
+  if (c.length) await intentar("captura/id", db.from("captura").delete().in("id", c));
+  if (u.length) await intentar("registro/usuario", db.from("registro_acceso").delete().in("usuario_id", u));
   if (a.length) {
     await intentar("registro/atleta", db.from("registro_acceso").delete().in("atleta_id", a));
     await intentar("atleta", db.from("atleta").delete().in("id", a));
@@ -225,6 +272,7 @@ export async function limpiar(): Promise<void> {
     if (error) errores.push(`usuario ${id}: ${error.message}`);
   }
   sesionesCreadas.length = 0;
+  capturasCreadas.length = 0;
   atletasCreados.length = 0;
   usuariosCreados.length = 0;
   if (errores.length) throw new Error(`limpiar() falló: ${errores.join("; ")}`);
