@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
 
 /**
  * Enlaces de acceso de un solo uso. Reciben el cliente service role y NO
@@ -23,42 +24,45 @@ export const MENSAJES_ENLACE: Record<Motivo, string> = {
   sin_acceso: "Tu acceso está desactivado. Habla con tu entrenador.",
 };
 
-interface PerfilAcceso {
-  rol: "remero" | "entrenador" | "admin";
-  nombre: string;
-  atleta_id: string | null;
-}
+/** Perfil de quien puede entrar hoy. */
+export type PerfilAcceso = z.infer<typeof PerfilAcceso>;
+const PerfilAcceso = z.object({
+  rol: z.enum(["remero", "entrenador", "admin"]),
+  nombre: z.string(),
+  atleta_id: z.string().nullable(),
+});
+// Fila de perfil con el atleta embebido (FK perfil.atleta_id, a lo más uno).
+const FilaPerfil = PerfilAcceso.extend({
+  atleta: z.object({ activo: z.boolean() }).nullable(),
+});
 
-/** Devuelve el perfil si el usuario puede entrar hoy; null si no. */
-async function perfilConAcceso(admin: SupabaseClient, usuarioId: string): Promise<PerfilAcceso | null> {
-  const { data: perfil, error } = await admin
+/**
+ * LA regla de acceso, en un solo lugar (enlaces, canje y la puerta de cada
+ * petición): staff con perfil; remero con atleta activo y consentimiento
+ * vigente. Devuelve el perfil si el usuario puede entrar hoy, null si no.
+ * Dos consultas: perfil + atleta embebido, y consentimiento.
+ */
+export async function perfilConAcceso(admin: SupabaseClient, usuarioId: string): Promise<PerfilAcceso | null> {
+  const { data, error } = await admin
     .from("perfil")
-    .select("rol, nombre, atleta_id")
+    .select("rol, nombre, atleta_id, atleta(activo)")
     .eq("user_id", usuarioId)
     .maybeSingle();
   if (error) throw new Error(`perfil: ${error.message}`);
-  if (!perfil) return null;
-  const p = perfil as PerfilAcceso;
-  if (p.rol !== "remero") return p;
-  if (!p.atleta_id) return null;
-
-  const { data: atleta, error: errA } = await admin
-    .from("atleta")
-    .select("activo")
-    .eq("id", p.atleta_id)
-    .maybeSingle();
-  if (errA) throw new Error(`atleta: ${errA.message}`);
-  if (!atleta || !atleta.activo) return null;
+  if (!data) return null;
+  const { atleta, ...perfil } = FilaPerfil.parse(data);
+  if (perfil.rol !== "remero") return perfil;
+  if (!perfil.atleta_id || !atleta?.activo) return null;
 
   // Misma regla que consentimiento_vigente(): existe alguno sin revocar.
   const { data: cons, error: errC } = await admin
     .from("consentimiento")
     .select("id")
-    .eq("atleta_id", p.atleta_id)
+    .eq("atleta_id", perfil.atleta_id)
     .is("revocado_en", null)
     .limit(1);
   if (errC) throw new Error(`consentimiento: ${errC.message}`);
-  return cons.length > 0 ? p : null;
+  return cons.length > 0 ? perfil : null;
 }
 
 /**
