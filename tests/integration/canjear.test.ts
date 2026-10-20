@@ -1,3 +1,4 @@
+import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js'
 import { afterAll, describe, expect, it } from 'vitest'
 import { asegurarUsuarioAtleta, crearUsuarioStaff } from '@/lib/acceso/usuario'
 import { generarEnlace, resolverEnlace } from '@/lib/acceso/enlace'
@@ -94,5 +95,57 @@ describe('canjearEnlace', () => {
     const auth = clienteAnonimo()
     expect(await canjearEnlace({ admin: admin(), auth }, t)).toEqual({ ok: true })
     expect((await auth.auth.getUser()).data.user?.id).toBe(id)
+  })
+
+  // verifyOtp simulado: devuelve el error sin llegar a GoTrue (el token sigue vivo).
+  const fallaVerify = (auth: ReturnType<typeof clienteAnonimo>, error: Error) => {
+    const original = auth.auth.verifyOtp.bind(auth.auth)
+    auth.auth.verifyOtp = (async () => ({ data: { user: null, session: null }, error })) as unknown as typeof original
+  }
+
+  it.each([
+    ['429 rate limit', () => new AuthApiError('Too many requests', 429, 'over_request_rate_limit')],
+    ['500 de GoTrue', () => new AuthApiError('Internal Server Error', 500, 'unexpected_failure')],
+    ['503 del gateway', () => new AuthRetryableFetchError('Service Unavailable', 503)],
+    ['red caída', () => new AuthRetryableFetchError('fetch failed', 0)],
+  ])('(h) %s: reintentar, sin sesión, y el enlace sigue sirviendo', async (_, error) => {
+    const { usuarioId } = await atletaConUsuario()
+    const t = await nuevoEnlace(usuarioId)
+    const auth = clienteAnonimo()
+    fallaVerify(auth, error())
+    expect(await canjearEnlace({ admin: admin(), auth }, t)).toEqual({ ok: false, motivo: 'reintentar' })
+    expect(await sesionDe(auth)).toBeNull()
+    const { data: fila } = await admin().from('enlace_acceso').select('usado_en').eq('token_hash', t).single()
+    expect(fila).toEqual({ usado_en: null })
+    expect((await resolverEnlace(admin(), t)).ok).toBe(true)
+    // El reintento real funciona.
+    const otra = clienteAnonimo()
+    expect(await canjearEnlace({ admin: admin(), auth: otra }, t)).toEqual({ ok: true })
+    expect((await otra.auth.getUser()).data.user?.id).toBe(usuarioId)
+  })
+
+  it('(i) OTP inválido o vencido según GoTrue (403 otp_expired): usado', async () => {
+    const { usuarioId } = await atletaConUsuario()
+    const t = await nuevoEnlace(usuarioId)
+    const auth = clienteAnonimo()
+    fallaVerify(auth, new AuthApiError('Email link is invalid or has expired', 403, 'otp_expired'))
+    expect(await canjearEnlace({ admin: admin(), auth }, t)).toEqual({ ok: false, motivo: 'usado' })
+    expect(await sesionDe(auth)).toBeNull()
+  })
+
+  it('(j) verifyOtp entrega la sesión de OTRO usuario: inexistente y sin sesión', async () => {
+    const a = await atletaConUsuario()
+    const b = await atletaConUsuario()
+    const tA = await nuevoEnlace(a.usuarioId)
+    const tB = await nuevoEnlace(b.usuarioId)
+    const auth = clienteAnonimo()
+    const original = auth.auth.verifyOtp.bind(auth.auth)
+    // GoTrue respondería con el usuario del token B aunque se pidió el de A.
+    auth.auth.verifyOtp = (async (params: Parameters<typeof original>[0]) =>
+      original({ ...params, token_hash: tB } as Parameters<typeof original>[0])) as typeof original
+    expect(await canjearEnlace({ admin: admin(), auth }, tA)).toEqual({ ok: false, motivo: 'inexistente' })
+    expect(await sesionDe(auth)).toBeNull()
+    const { data: fila } = await admin().from('enlace_acceso').select('usado_en').eq('token_hash', tA).single()
+    expect(fila).toEqual({ usado_en: null })
   })
 })

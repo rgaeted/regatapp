@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   referrer: "no-referrer",
 };
 
-const MOTIVOS = ["inexistente", "vencido", "usado", "sin_acceso"] as const;
+const MOTIVOS = ["inexistente", "vencido", "usado", "sin_acceso", "reintentar"] as const;
 type Motivo = (typeof MOTIVOS)[number];
 
 export default async function PaginaEntrar({ searchParams }: PageProps<"/entrar">) {

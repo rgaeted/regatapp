@@ -9,11 +9,11 @@ import { z } from "zod";
 
 const VIGENCIA_MS = 24 * 60 * 60 * 1000;
 // hashed_token de GoTrue: caracteres seguros; cualquier otra cosa no puede existir.
-const FORMATO_TOKEN = /^[A-Za-z0-9_-]{1,512}$/;
+export const FORMATO_TOKEN = /^[A-Za-z0-9_-]{1,512}$/;
 
 export type ResultadoEnlace =
   | { ok: true; nombre: string; usuarioId: string }
-  | { ok: false; motivo: "inexistente" | "vencido" | "usado" | "sin_acceso" };
+  | { ok: false; motivo: "inexistente" | "vencido" | "usado" | "sin_acceso" | "reintentar" };
 
 type Motivo = Extract<ResultadoEnlace, { ok: false }>["motivo"];
 
@@ -22,6 +22,7 @@ export const MENSAJES_ENLACE: Record<Motivo, string> = {
   vencido: "Este enlace venció. Pídele uno nuevo a tu entrenador.",
   usado: "Este enlace ya se usó. Pídele uno nuevo a tu entrenador.",
   sin_acceso: "Tu acceso está desactivado. Habla con tu entrenador.",
+  reintentar: "No pudimos entrar ahora. Intenta de nuevo en unos minutos.",
 };
 
 /** Perfil de quien puede entrar hoy. */

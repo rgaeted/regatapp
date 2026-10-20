@@ -234,6 +234,7 @@ describe('MENSAJES_ENLACE', () => {
       vencido: 'Este enlace venció. Pídele uno nuevo a tu entrenador.',
       usado: 'Este enlace ya se usó. Pídele uno nuevo a tu entrenador.',
       sin_acceso: 'Tu acceso está desactivado. Habla con tu entrenador.',
+      reintentar: 'No pudimos entrar ahora. Intenta de nuevo en unos minutos.',
     })
   })
 })

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { accesoVigente, marcarUsado, resolverEnlace, type ResultadoEnlace } from "@/lib/acceso/enlace";
+import { esErrorTransitorio } from "@/lib/acceso/errores-auth";
 
 /**
  * Canje de un enlace de acceso. Sin `server-only` ni imports de Next para que
@@ -18,8 +19,19 @@ export async function canjearEnlace(
   if (!previo.ok) return { ok: false, motivo: previo.motivo };
 
   const { data, error } = await auth.auth.verifyOtp({ type: "magiclink", token_hash: token });
-  // GoTrue ya lo consumió o venció. No se filtra el texto del error.
-  if (error || !data.user) return { ok: false, motivo: "usado" };
+  if (error || !data.user) {
+    // Rate limit (429), 5xx o red: GoTrue no consumió el token, el enlace sigue
+    // valiendo y no se marca. Ver la clasificación en errores-auth.ts.
+    if (error && esErrorTransitorio(error)) return { ok: false, motivo: "reintentar" };
+    // Definitivo (OTP inválido, vencido o ya consumido). No se filtra el texto.
+    return { ok: false, motivo: "usado" };
+  }
+
+  // Defensa en profundidad: la sesión debe ser del dueño del enlace.
+  if (data.user.id !== previo.usuarioId) {
+    await auth.auth.signOut({ scope: "local" });
+    return { ok: false, motivo: "inexistente" };
+  }
 
   // El hashed_token es una credencial al portador que también sirve directo
   // contra GoTrue: el acceso se vuelve a comprobar tras crear la sesión.
