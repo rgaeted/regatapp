@@ -50,6 +50,22 @@ export function clienteAnonimo(): SupabaseClient {
 
 export const BUCKET_CAPTURAS = "capturas";
 
+// GET crudo a PostgREST con el JWT del usuario, para mandar cabeceras que
+// supabase-js no expone (p. ej. Prefer: timezone=...).
+export async function consultaRest(
+  cliente: SupabaseClient,
+  ruta: string,
+  cabeceras: Record<string, string> = {},
+): Promise<{ status: number; body: unknown; preferenciaAplicada: string | null }> {
+  const { data } = await cliente.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("consultaRest: el cliente no tiene sesión");
+  const r = await fetch(`${URL_SUPABASE}/rest/v1/${ruta}`, {
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, ...cabeceras },
+  });
+  return { status: r.status, body: await r.json(), preferenciaAplicada: r.headers.get("preference-applied") };
+}
+
 function falla(contexto: string, error: { message: string } | null): void {
   if (error) throw new Error(`${contexto}: ${error.message}`);
 }
@@ -190,7 +206,7 @@ export async function limpiar(): Promise<void> {
     const { data: objetos, error } = await db.storage.from(BUCKET_CAPTURAS).list(id, { limit: 1000 });
     if (error) {
       // Antes de la migración de RLS el bucket no existe: no hay nada que borrar.
-      if (!/not found/i.test(error.message)) errores.push(`storage/list ${id}: ${error.message}`);
+      if (!/^(bucket|object) not found$/i.test(error.message)) errores.push(`storage/list ${id}: ${error.message}`);
       continue;
     }
     if (objetos?.length) {

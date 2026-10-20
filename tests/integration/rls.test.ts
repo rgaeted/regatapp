@@ -7,6 +7,7 @@ import {
   asignar,
   BUCKET_CAPTURAS,
   clienteAnonimo,
+  consultaRest,
   crearAtleta,
   crearSesion,
   crearUsuario,
@@ -33,6 +34,12 @@ function sesionNueva(atletaId: string, creadoPor: string) {
 }
 
 const RLS = "42501"; // insufficient_privilege: violación de política o permiso denegado
+
+async function hoySantiago(): Promise<string> {
+  const { data, error } = await admin().rpc("hoy_santiago");
+  if (error) throw new Error(`hoy_santiago: ${error.message}`);
+  return data as string;
+}
 
 describe("1. remero A no ve sesiones de B", () => {
   let remeroA: Usuario;
@@ -72,8 +79,9 @@ describe("1. remero A no ve sesiones de B", () => {
   });
 
   it("anon no ve ninguna sesión", async () => {
-    const { data } = await clienteAnonimo().from("sesion").select("id").in("id", [sesionA, sesionB]);
-    expect(data ?? []).toEqual([]);
+    const { data, error } = await clienteAnonimo().from("sesion").select("id").in("id", [sesionA, sesionB]);
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
   });
 });
 
@@ -137,22 +145,10 @@ describe("3. entrenador ve solo atletas asignados y vigentes", () => {
       atletas[k] = await crearAtleta();
       sesiones[k] = await crearSesion(atletas[k]);
     }
-    // "hoy" se toma del propio Postgres (default current_date de desde), no del
-    // reloj local: evita fallos cerca de medianoche por diferencia de zona horaria.
-    const { data, error } = await admin()
-      .from("asignacion_entrenador")
-      .insert({ entrenador_id: entrenador.id, atleta_id: atletas.hastaHoy })
-      .select("desde")
-      .single();
-    if (error) throw new Error(error.message);
-    const hoy = data.desde as string;
-    const upd = await admin()
-      .from("asignacion_entrenador")
-      .update({ hasta: hoy })
-      .eq("entrenador_id", entrenador.id)
-      .eq("atleta_id", atletas.hastaHoy);
-    if (upd.error) throw new Error(upd.error.message);
-
+    // "hoy" sale de la misma expresión que usa entrena_a (fecha de Santiago en
+    // Postgres), no del reloj local: evita fallos cerca de medianoche.
+    const hoy = await hoySantiago();
+    await asignar(entrenador.id, atletas.hastaHoy, hoy, hoy);
     await asignar(entrenador.id, atletas.asignado, sumarDias(hoy, -30), null);
     await asignar(entrenador.id, atletas.hastaAyer, sumarDias(hoy, -30), sumarDias(hoy, -1));
     await asignar(entrenador.id, atletas.desdeManana, sumarDias(hoy, 1), null);
@@ -231,11 +227,10 @@ describe("5. registro_acceso y enlace_acceso", () => {
   });
   afterAll(limpiar);
 
-  it("remero lee registro_acceso y enlace_acceso → [] o error", async () => {
-    for (const tabla of ["registro_acceso", "enlace_acceso"]) {
-      const { data, error } = await remero.cliente.from(tabla).select("*");
-      if (!error) expect(data).toEqual([]);
-    }
+  it("remero lee registro_acceso → [] y enlace_acceso → permiso denegado", async () => {
+    const registro = await remero.cliente.from("registro_acceso").select("*");
+    expect(registro.error).toBeNull();
+    expect(registro.data).toEqual([]);
     const enlace = await remero.cliente.from("enlace_acceso").select("*");
     expect(enlace.error?.code).toBe(RLS);
   });
@@ -247,8 +242,9 @@ describe("5. registro_acceso y enlace_acceso", () => {
       p_detalle: { origen: "rls.test" },
     });
     expect(error).toBeNull();
-    const { data } = await remero.cliente.from("registro_acceso").select("*");
-    expect(data ?? []).toEqual([]);
+    const lectura = await remero.cliente.from("registro_acceso").select("*");
+    expect(lectura.error).toBeNull();
+    expect(lectura.data).toEqual([]);
   });
 
   it("remero no puede insertar, modificar ni borrar directo en registro_acceso", async () => {
@@ -433,8 +429,9 @@ describe("9. storage: cada usuario sube solo a su carpeta de capturas", () => {
     const { data, error } = await remero.cliente.storage
       .from(BUCKET_CAPTURAS)
       .upload(`${otro.id}/x.jpg`, jpg, { contentType: "image/jpeg" });
-    expect(error).not.toBeNull();
     expect(data).toBeNull();
+    expect(error?.message).toMatch(/row-level security policy/i);
+    expect((error as unknown as { statusCode?: string }).statusCode).toBe("403");
   });
 
   it("a capturas/<su_uid>/x.jpg → ok, y el otro no puede leerla", async () => {
@@ -498,5 +495,244 @@ describe("10. atleta: sin insert directo", () => {
     await remero.cliente.from("atleta").update({ nombre: "Cambiado" }).eq("id", p!.atleta_id);
     const { data } = await admin().from("atleta").select("nombre").eq("id", p!.atleta_id).single();
     expect(data!.nombre).toBe("Test");
+  });
+});
+
+describe("11. vigencia de asignaciones en hora de Santiago", () => {
+  let entrenador: Usuario;
+  let manana: string;
+  let ayer: string;
+  let hoy: string;
+
+  beforeAll(async () => {
+    entrenador = await crearUsuario({ rol: "entrenador" });
+    manana = await crearAtleta();
+    ayer = await crearAtleta();
+    hoy = await hoySantiago();
+    await asignar(entrenador.id, manana, sumarDias(hoy, 1), null);
+    await asignar(entrenador.id, ayer, sumarDias(hoy, -30), sumarDias(hoy, -1));
+  });
+  afterAll(limpiar);
+
+  it("hoy_santiago() es la fecha civil de America/Santiago", async () => {
+    const local = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
+    expect(hoy).toBe(local);
+  });
+
+  it("desde por defecto de asignacion_entrenador es hoy en Santiago", async () => {
+    const otro = await crearUsuario({ rol: "entrenador" });
+    const { data, error } = await admin()
+      .from("asignacion_entrenador")
+      .insert({ entrenador_id: otro.id, atleta_id: ayer })
+      .select("desde")
+      .single();
+    expect(error).toBeNull();
+    expect(data!.desde).toBe(hoy);
+  });
+
+  // Un cliente puede pedir otra zona horaria a PostgREST; entrena_a no debe depender de ella.
+  it.each(["Pacific/Kiritimati", "Etc/GMT+12"])(
+    "con Prefer: timezone=%s sigue sin ver desde = mañana ni hasta = ayer",
+    async (tz) => {
+      const r = await consultaRest(entrenador.cliente, `atleta?select=id&id=in.(${manana},${ayer})`, {
+        Prefer: `timezone=${tz}`,
+      });
+      expect(r.status).toBe(200);
+      expect(r.body).toEqual([]);
+    },
+  );
+});
+
+describe("12. sesion.captura_id solo apunta a capturas propias", () => {
+  let remeroA: Usuario;
+  let remeroB: Usuario;
+  let atletaA: string;
+  let capturaA: string;
+  let capturaB: string;
+  let sesionA: string;
+
+  const subir = async (u: Usuario) => {
+    const { data, error } = await u.cliente
+      .from("captura")
+      .insert({ storage_path: `${u.id}/${Math.random()}.jpg`, subida_por: u.id })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    return data.id as string;
+  };
+
+  beforeAll(async () => {
+    atletaA = await crearAtleta();
+    remeroA = await crearUsuario({ rol: "remero", atletaId: atletaA });
+    remeroB = await crearUsuario({ rol: "remero", atletaId: await crearAtleta() });
+    capturaA = await subir(remeroA);
+    capturaB = await subir(remeroB);
+    const { data, error } = await remeroA.cliente
+      .from("sesion")
+      .insert(sesionNueva(atletaA, remeroA.id))
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    sesionA = data.id as string;
+  });
+  afterAll(limpiar);
+
+  it("A no inserta una sesión que referencia la captura de B", async () => {
+    const { error } = await remeroA.cliente
+      .from("sesion")
+      .insert({ ...sesionNueva(atletaA, remeroA.id), captura_id: capturaB });
+    expect(error?.code).toBe(RLS);
+  });
+
+  it("A no actualiza su sesión para apuntar a la captura de B", async () => {
+    const { error } = await remeroA.cliente.from("sesion").update({ captura_id: capturaB }).eq("id", sesionA);
+    expect(error?.code).toBe(RLS);
+  });
+
+  it("A sigue sin leer ni apropiarse de la captura de B", async () => {
+    const { data, error } = await remeroA.cliente.from("captura").select("id").eq("id", capturaB);
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
+    await remeroA.cliente.from("captura").update({ subida_por: remeroA.id }).eq("id", capturaB);
+    const { data: c } = await admin().from("captura").select("subida_por").eq("id", capturaB).single();
+    expect(c!.subida_por).toBe(remeroB.id);
+  });
+
+  it("A sí vincula su propia captura y edita la sesión sin cambiarla", async () => {
+    const vincular = await remeroA.cliente.from("sesion").update({ captura_id: capturaA }).eq("id", sesionA);
+    expect(vincular.error).toBeNull();
+    const editar = await remeroA.cliente.from("sesion").update({ notas: "ok" }).eq("id", sesionA);
+    expect(editar.error).toBeNull();
+    const nueva = await remeroA.cliente
+      .from("sesion")
+      .insert({ ...sesionNueva(atletaA, remeroA.id), captura_id: capturaA });
+    expect(nueva.error).toBeNull();
+  });
+
+  it("subida_por de una captura no se puede cambiar", async () => {
+    const { error } = await remeroA.cliente.from("captura").update({ subida_por: remeroB.id }).eq("id", capturaA);
+    expect(error?.code).toBe(RLS);
+    const { data: c } = await admin().from("captura").select("subida_por").eq("id", capturaA).single();
+    expect(c!.subida_por).toBe(remeroA.id);
+  });
+});
+
+describe("13. atleta.user_id y concept2_user_id solo los cambia el servidor", () => {
+  let entrenador: Usuario;
+  let adminU: Usuario;
+  let atleta: string;
+
+  beforeAll(async () => {
+    atleta = await crearAtleta();
+    entrenador = await crearUsuario({ rol: "entrenador" });
+    adminU = await crearUsuario({ rol: "admin" });
+    await asignar(entrenador.id, atleta, "2020-01-01");
+  });
+  afterAll(limpiar);
+
+  const fila = async () => {
+    const { data } = await admin()
+      .from("atleta")
+      .select("nombre, user_id, concept2_user_id")
+      .eq("id", atleta)
+      .single();
+    return data!;
+  };
+
+  it("entrenador no cambia user_id", async () => {
+    const { error } = await entrenador.cliente.from("atleta").update({ user_id: adminU.id }).eq("id", atleta);
+    expect(error?.code).toBe(RLS);
+    expect((await fila()).user_id).toBeNull();
+  });
+
+  it("entrenador no cambia concept2_user_id", async () => {
+    const { error } = await entrenador.cliente.from("atleta").update({ concept2_user_id: "999" }).eq("id", atleta);
+    expect(error?.code).toBe(RLS);
+    expect((await fila()).concept2_user_id).toBeNull();
+  });
+
+  it("admin con su JWT tampoco", async () => {
+    const { error } = await adminU.cliente.from("atleta").update({ user_id: adminU.id }).eq("id", atleta);
+    expect(error?.code).toBe(RLS);
+    expect((await fila()).user_id).toBeNull();
+  });
+
+  it("entrenador sí cambia nombre", async () => {
+    const { error } = await entrenador.cliente.from("atleta").update({ nombre: "Renombrado" }).eq("id", atleta);
+    expect(error).toBeNull();
+    expect((await fila()).nombre).toBe("Renombrado");
+  });
+
+  it("service role sí cambia user_id", async () => {
+    const remero = await crearUsuario({ rol: "remero" });
+    const { error } = await admin().from("atleta").update({ user_id: remero.id }).eq("id", atleta);
+    expect(error).toBeNull();
+    expect((await fila()).user_id).toBe(remero.id);
+  });
+});
+
+describe("14. concept2_result_id y origen api_concept2 solo desde el servidor", () => {
+  let remero: Usuario;
+  let atleta: string;
+  let sesion: string;
+  const idC2 = () => 9_000_000_000_000 + Math.floor(Math.random() * 1_000_000_000);
+
+  beforeAll(async () => {
+    atleta = await crearAtleta();
+    remero = await crearUsuario({ rol: "remero", atletaId: atleta });
+    const { data, error } = await remero.cliente
+      .from("sesion")
+      .insert({ ...sesionNueva(atleta, remero.id), origen: "manual", verificado: true })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    sesion = data.id as string;
+  });
+  afterAll(limpiar);
+
+  it("inserta con concept2_result_id → error", async () => {
+    const { error } = await remero.cliente
+      .from("sesion")
+      .insert({ ...sesionNueva(atleta, remero.id), concept2_result_id: idC2() });
+    expect(error?.code).toBe(RLS);
+  });
+
+  it("inserta con origen api_concept2 → error", async () => {
+    const { error } = await remero.cliente
+      .from("sesion")
+      .insert({ ...sesionNueva(atleta, remero.id), origen: "api_concept2", verificado: true });
+    expect(error?.code).toBe(RLS);
+  });
+
+  it("actualiza para fijar concept2_result_id u origen api_concept2 → error", async () => {
+    const a = await remero.cliente.from("sesion").update({ concept2_result_id: idC2() }).eq("id", sesion);
+    expect(a.error?.code).toBe(RLS);
+    const b = await remero.cliente.from("sesion").update({ origen: "api_concept2" }).eq("id", sesion);
+    expect(b.error?.code).toBe(RLS);
+    const { data } = await admin().from("sesion").select("origen, concept2_result_id").eq("id", sesion).single();
+    expect(data).toEqual({ origen: "manual", concept2_result_id: null });
+  });
+
+  it("la carga manual verificada sigue funcionando", async () => {
+    const { error } = await remero.cliente
+      .from("sesion")
+      .insert({ ...sesionNueva(atleta, remero.id), origen: "manual", verificado: true });
+    expect(error).toBeNull();
+  });
+
+  it("service role sí fija concept2_result_id", async () => {
+    const id = idC2();
+    const { error } = await admin()
+      .from("sesion")
+      .update({ concept2_result_id: id, origen: "api_concept2" })
+      .eq("id", sesion);
+    expect(error).toBeNull();
+    const { data } = await admin().from("sesion").select("concept2_result_id").eq("id", sesion).single();
+    expect(Number(data!.concept2_result_id)).toBe(id);
+  });
+
+  it("una sesión importada sigue editable en otros campos por el remero", async () => {
+    const { error } = await remero.cliente.from("sesion").update({ rpe: 7 }).eq("id", sesion);
+    expect(error).toBeNull();
   });
 });
