@@ -63,7 +63,7 @@ supabase/
   config.toml
   migrations/20261020000001_esquema_inicial.sql
   migrations/20261020000002_rls.sql
-  migrations/20261020000003_crear_atleta.sql
+  migrations/20261020000004_crear_atleta.sql
   seed.sql
 scripts/
   env-local.mjs                 escribe .env.local desde `supabase status -o env`
@@ -230,7 +230,7 @@ Políticas: la tabla de spec §6, con estas precisiones:
 ### Task 5: Alta de atleta con consentimiento
 
 **Files:**
-- Create: `supabase/migrations/20261020000003_crear_atleta.sql`, `lib/schemas/consentimiento.ts`, `lib/schemas/atleta.ts`, `tests/unit/consentimiento.test.ts`, `tests/integration/crear-atleta.test.ts`
+- Create: `supabase/migrations/20261020000004_crear_atleta.sql`, `lib/schemas/consentimiento.ts`, `lib/schemas/atleta.ts`, `tests/unit/consentimiento.test.ts`, `tests/integration/crear-atleta.test.ts`
 
 **Interfaces:**
 - Produces (SQL): `crear_atleta_con_consentimiento(p_atleta jsonb, p_consentimiento jsonb) returns uuid`, `security definer`, en una transacción: exige `es_admin() or es_entrenador()` (si no, `raise exception 'sin permiso'`); valida la regla de relación (abajo); inserta `atleta`, `consentimiento` (con `registrado_por = auth.uid()`) y, si quien llama es entrenador, `asignacion_entrenador(auth.uid(), id)`. `grant execute to authenticated`.
