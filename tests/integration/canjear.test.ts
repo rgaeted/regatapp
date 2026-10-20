@@ -99,8 +99,7 @@ describe('canjearEnlace', () => {
 
   // verifyOtp simulado: devuelve el error sin llegar a GoTrue (el token sigue vivo).
   const fallaVerify = (auth: ReturnType<typeof clienteAnonimo>, error: Error) => {
-    const original = auth.auth.verifyOtp.bind(auth.auth)
-    auth.auth.verifyOtp = (async () => ({ data: { user: null, session: null }, error })) as unknown as typeof original
+    auth.auth.verifyOtp = (async () => ({ data: { user: null, session: null }, error })) as unknown as typeof auth.auth.verifyOtp
   }
 
   it.each([
