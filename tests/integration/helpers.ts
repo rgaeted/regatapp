@@ -249,6 +249,13 @@ export async function limpiar(): Promise<void> {
   if (u.length) await intentar("captura", db.from("captura").delete().in("subida_por", u));
   if (c.length) await intentar("captura/id", db.from("captura").delete().in("id", c));
   if (u.length) await intentar("registro/usuario", db.from("registro_acceso").delete().in("usuario_id", u));
+  // Enlaces generados desde scripts (usuario_id null): el sujeto está en detalle.
+  if (u.length) {
+    await intentar(
+      "registro/usuario_objetivo",
+      db.from("registro_acceso").delete().in("detalle->>usuario_objetivo", u),
+    );
+  }
   if (a.length) {
     await intentar("registro/atleta", db.from("registro_acceso").delete().in("atleta_id", a));
     await intentar("atleta", db.from("atleta").delete().in("id", a));

@@ -181,7 +181,6 @@ describe('generar y resolver enlaces', () => {
   it('atleta borrado -> inexistente o sin_acceso, sin lanzar', async () => {
     const { atletaId, usuarioId } = await atletaConUsuario()
     const token = await nuevoEnlace(usuarioId)
-    await admin().from('registro_acceso').delete().eq('atleta_id', atletaId) // evita filas huérfanas (FK set null)
     const { error } = await admin().from('atleta').delete().eq('id', atletaId)
     expect(error).toBeNull()
     const r = await resolverEnlace(admin(), token)
@@ -194,8 +193,16 @@ describe('generar y resolver enlaces', () => {
     const { atletaId, usuarioId } = await atletaConUsuario()
     const { id: entrenador } = await crearUsuario({ rol: 'entrenador', nombre: 'Coach' })
     await nuevoEnlace(usuarioId, entrenador)
-    const { data } = await admin().from('registro_acceso').select('usuario_id,atleta_id').eq('accion', 'generar_enlace').eq('atleta_id', atletaId)
-    expect(data).toEqual([{ usuario_id: entrenador, atleta_id: atletaId }])
+    const { data } = await admin().from('registro_acceso').select('usuario_id,atleta_id,detalle').eq('accion', 'generar_enlace').eq('atleta_id', atletaId)
+    expect(data).toEqual([{ usuario_id: entrenador, atleta_id: atletaId, detalle: { usuario_objetivo: usuarioId, origen: 'app' } }])
+  })
+
+  it('el registro de un enlace de script o de staff lleva el usuario objetivo', async () => {
+    const id = await crearUsuarioStaff(admin(), { nombre: 'Coach Script', rol: 'entrenador' })
+    registrarUsuario(id)
+    await nuevoEnlace(id)
+    const { data } = await admin().from('registro_acceso').select('usuario_id,atleta_id,detalle').eq('accion', 'generar_enlace').eq('detalle->>usuario_objetivo', id)
+    expect(data).toEqual([{ usuario_id: null, atleta_id: null, detalle: { usuario_objetivo: id, origen: 'script' } }])
   })
 
   it('generarEnlace falla si el usuario no existe', async () => {
@@ -210,7 +217,7 @@ describe('staff', () => {
     const { data } = await admin().from('perfil').select('rol,nombre,atleta_id').eq('user_id', id).single()
     expect(data).toEqual({ rol: 'entrenador', nombre: 'Coach Uno', atleta_id: null })
     expect(await accesoVigente(admin(), id)).toBe(true)
-    const token = await nuevoEnlace(id, id) // creadoPor = id para que limpiar() borre el registro
+    const token = await nuevoEnlace(id)
     expect(await resolverEnlace(admin(), token)).toEqual({ ok: true, nombre: 'Coach Uno', usuarioId: id })
 
     const { data: sinPerfil } = await admin().auth.admin.createUser({ email: `s-${randomUUID()}@test.invalid`, email_confirm: true })

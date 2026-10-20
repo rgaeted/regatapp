@@ -79,7 +79,9 @@ export async function generarEnlace(
   admin: SupabaseClient,
   opts: { usuarioId: string; creadoPor: string | null; siteUrl: string },
 ): Promise<string> {
-  if (!(await accesoVigente(admin, opts.usuarioId))) {
+  // perfilConAcceso lanza si falla la lectura: nunca se registra con datos a medias.
+  const perfil = await perfilConAcceso(admin, opts.usuarioId);
+  if (!perfil) {
     throw new Error("El usuario no tiene acceso vigente (sin perfil, atleta inactivo o consentimiento revocado)");
   }
   const { data: u, error: errU } = await admin.auth.admin.getUserById(opts.usuarioId);
@@ -106,15 +108,12 @@ export async function generarEnlace(
   });
   if (errIns) throw new Error(`enlace_acceso: ${errIns.message}`);
 
-  const { data: perfil } = await admin
-    .from("perfil")
-    .select("atleta_id")
-    .eq("user_id", opts.usuarioId)
-    .maybeSingle();
+  // usuario_id es quien generó el enlace (null desde scripts); el sujeto va en detalle.
   const { error: errReg } = await admin.from("registro_acceso").insert({
     accion: "generar_enlace",
-    atleta_id: perfil?.atleta_id ?? null,
+    atleta_id: perfil.atleta_id,
     usuario_id: opts.creadoPor,
+    detalle: { usuario_objetivo: opts.usuarioId, origen: opts.creadoPor ? "app" : "script" },
   });
   if (errReg) throw new Error(`registro_acceso: ${errReg.message}`);
 

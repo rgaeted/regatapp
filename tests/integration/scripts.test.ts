@@ -3,23 +3,9 @@ import { afterAll, describe, expect, it } from "vitest";
 import { resolverEnlace } from "@/lib/acceso/enlace";
 import { admin, crearAtleta, limpiar, registrarUsuario } from "./helpers";
 
-const inicio = new Date().toISOString();
-const atletasUsados: string[] = [];
-
-// Los scripts generan enlaces con creado_por null: el registro_acceso queda sin
-// usuario, así que limpiar() no lo alcanza. Se borra aquí, antes de borrar atletas.
-afterAll(async () => {
-  const db = admin();
-  if (atletasUsados.length) await db.from("registro_acceso").delete().in("atleta_id", atletasUsados);
-  await db
-    .from("registro_acceso")
-    .delete()
-    .eq("accion", "generar_enlace")
-    .is("usuario_id", null)
-    .is("atleta_id", null)
-    .gte("en", inicio);
-  await limpiar();
-});
+// limpiar() también borra el registro_acceso de los enlaces generados por los
+// scripts (creado_por null): lo encuentra por detalle.usuario_objetivo.
+afterAll(limpiar);
 
 const PATRON_URL = /^https?:\/\/.*\/entrar\?t=[A-Za-z0-9_-]+$/;
 
@@ -42,7 +28,6 @@ const tokenDe = (url: string) => new URL(url).searchParams.get("t") as string;
 describe("scripts de acceso", () => {
   it("enlace-atleta imprime una sola URL válida para un atleta con consentimiento", async () => {
     const atletaId = await crearAtleta();
-    atletasUsados.push(atletaId);
     const r = correr("enlace-atleta", ["--atleta", atletaId]);
     const { data: a } = await admin().from("atleta").select("user_id").eq("id", atletaId).single();
     if (a?.user_id) registrarUsuario(a.user_id as string);
