@@ -37,6 +37,11 @@ const usuariosCreados: string[] = [];
 const atletasCreados: string[] = [];
 const sesionesCreadas: string[] = [];
 
+// Para que limpiar() borre usuarios creados fuera de los helpers (p. ej. por lib/acceso).
+export function registrarUsuario(id: string): void {
+  if (!usuariosCreados.includes(id)) usuariosCreados.push(id);
+}
+
 let clienteAdmin: SupabaseClient | undefined;
 export function admin(): SupabaseClient {
   clienteAdmin ??= createClient(URL_SUPABASE, SERVICE_KEY, opciones);
