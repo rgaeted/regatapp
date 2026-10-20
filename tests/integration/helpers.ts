@@ -23,7 +23,7 @@ export function verificarEntornoDeTest(): void {
   const host = new URL(URL_SUPABASE).hostname;
   if (host === "localhost" || host === "127.0.0.1") return;
   const ref = process.env.SUPABASE_PROJECT_REF;
-  if (process.env.ALLOW_REMOTE_TESTS === "1" && ref && host.startsWith(ref)) return;
+  if (process.env.ALLOW_REMOTE_TESTS === "1" && ref && host === `${ref}.supabase.co`) return;
   throw new Error(
     `Los tests de integración no pueden correr contra ${host}. ` +
       "Usa Supabase local o define ALLOW_REMOTE_TESTS=1 y SUPABASE_PROJECT_REF del proyecto dev.",
@@ -124,6 +124,7 @@ export async function crearSesion(
     tipo: "entrenamiento" | "test" | "competencia";
     distancia_m: number | null;
     tiempo_ds: number | null;
+    creado_por: string;
   }> = {},
 ): Promise<string> {
   const { data, error } = await admin()
@@ -134,6 +135,7 @@ export async function crearSesion(
       fecha: new Date().toISOString(),
       distancia_m: "distancia_m" in campos ? campos.distancia_m : 2000,
       tiempo_ds: "tiempo_ds" in campos ? campos.tiempo_ds : 4200,
+      creado_por: campos.creado_por ?? null,
     })
     .select("id")
     .single();
@@ -143,8 +145,9 @@ export async function crearSesion(
   return id;
 }
 
-// Borra todo lo creado por los helpers. Los atletas arrastran en cascada
-// sesiones, splits y consentimientos.
+// Borra todo lo creado por los helpers, en orden seguro: primero las filas que
+// dependen de usuarios/atletas (varias FK a auth.users y atleta no tienen ON
+// DELETE), luego atletas y al final los usuarios. Sigue ante errores y lanza al final.
 export async function limpiar(): Promise<void> {
   const db = admin();
   const errores: string[] = [];
@@ -152,17 +155,30 @@ export async function limpiar(): Promise<void> {
     const { error } = await p;
     if (error) errores.push(`${nombre}: ${error.message}`);
   };
+  const u = [...usuariosCreados];
+  const a = [...atletasCreados];
+  const s = [...sesionesCreadas];
 
-  if (sesionesCreadas.length) await intentar("sesion", db.from("sesion").delete().in("id", sesionesCreadas));
-  if (usuariosCreados.length) {
-    await intentar("registro_acceso/u", db.from("registro_acceso").delete().in("usuario_id", usuariosCreados));
-    await intentar("enlace_acceso", db.from("enlace_acceso").delete().in("usuario_id", usuariosCreados));
+  if (s.length) await intentar("sesion/id", db.from("sesion").delete().in("id", s));
+  if (u.length) await intentar("sesion/creado_por", db.from("sesion").delete().in("creado_por", u));
+  if (a.length) await intentar("sesion/atleta", db.from("sesion").delete().in("atleta_id", a));
+  if (u.length) await intentar("captura", db.from("captura").delete().in("subida_por", u));
+  if (a.length) await intentar("consentimiento/atleta", db.from("consentimiento").delete().in("atleta_id", a));
+  if (u.length) await intentar("consentimiento/registrado_por", db.from("consentimiento").delete().in("registrado_por", u));
+  if (u.length) await intentar("asignacion/entrenador", db.from("asignacion_entrenador").delete().in("entrenador_id", u));
+  if (a.length) await intentar("asignacion/atleta", db.from("asignacion_entrenador").delete().in("atleta_id", a));
+  if (u.length) await intentar("perfil/user", db.from("perfil").delete().in("user_id", u));
+  if (a.length) await intentar("perfil/atleta", db.from("perfil").delete().in("atleta_id", a));
+  if (u.length) {
+    await intentar("enlace/usuario", db.from("enlace_acceso").delete().in("usuario_id", u));
+    await intentar("enlace/creado_por", db.from("enlace_acceso").delete().in("creado_por", u));
+    await intentar("registro/usuario", db.from("registro_acceso").delete().in("usuario_id", u));
   }
-  if (atletasCreados.length) {
-    await intentar("registro_acceso/a", db.from("registro_acceso").delete().in("atleta_id", atletasCreados));
-    await intentar("atleta", db.from("atleta").delete().in("id", atletasCreados));
+  if (a.length) {
+    await intentar("registro/atleta", db.from("registro_acceso").delete().in("atleta_id", a));
+    await intentar("atleta", db.from("atleta").delete().in("id", a));
   }
-  for (const id of usuariosCreados) {
+  for (const id of u) {
     const { error } = await db.auth.admin.deleteUser(id);
     if (error) errores.push(`usuario ${id}: ${error.message}`);
   }
