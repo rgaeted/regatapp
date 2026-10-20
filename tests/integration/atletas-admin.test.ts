@@ -1,7 +1,10 @@
+import { randomUUID } from 'node:crypto'
 import { afterAll, describe, expect, it } from 'vitest'
-import { cambiarActivo, generarEnlaceParaAtleta, revocarConsentimiento } from '@/lib/atletas/administrar'
+import { atletaVisible, cambiarActivo, generarEnlaceParaAtleta, revocarConsentimiento } from '@/lib/atletas/administrar'
+import { eliminarAtleta } from '@/lib/atletas/eliminar'
+import { exportarAtleta } from '@/lib/atletas/exportar'
 import { perfilConAcceso } from '@/lib/acceso/enlace'
-import { admin, asignar, crearAtleta, crearUsuario, limpiar } from './helpers'
+import { admin, asignar, crearAtleta, crearSesion, crearUsuario, limpiar, olvidarUsuario } from './helpers'
 
 afterAll(limpiar)
 
@@ -101,5 +104,78 @@ describe('cambiarActivo', () => {
     const ent = await crearUsuario({ rol: 'entrenador' })
     const atletaId = await crearAtleta()
     expect((await cambiarActivo(ent.cliente, atletaId, false)).ok).toBe(false)
+  })
+})
+
+describe('atletaVisible', () => {
+  it('es true para el entrenador asignado y false para otro', async () => {
+    const entA = await crearUsuario({ rol: 'entrenador' })
+    const entB = await crearUsuario({ rol: 'entrenador' })
+    const atletaId = await crearAtleta()
+    await asignar(entA.id, atletaId)
+    expect(await atletaVisible(entA.cliente, atletaId)).toBe(true)
+    expect(await atletaVisible(entB.cliente, atletaId)).toBe(false)
+  })
+})
+
+describe('exportarAtleta', () => {
+  it('incluye sesiones con splits y consentimiento, y nada de otro atleta', async () => {
+    const atletaId = await crearAtleta()
+    const otro = await crearAtleta()
+    const s1 = await crearSesion(atletaId)
+    await crearSesion(atletaId)
+    await crearSesion(otro)
+    await admin().from('split').insert({ sesion_id: s1, orden: 1, tiempo_ds: 1100 })
+
+    const r = await exportarAtleta(admin(), atletaId)
+    expect(r.atleta.id).toBe(atletaId)
+    expect(r.sesiones).toHaveLength(2)
+    expect(r.sesiones.find((s) => s.id === s1)?.splits).toHaveLength(1)
+    expect(r.consentimientos).toHaveLength(1)
+  })
+})
+
+describe('eliminarAtleta', () => {
+  it('borra todo del atleta, su usuario de Auth y su foto, y deja la fila eliminar', async () => {
+    const ejecutor = await crearUsuario({ rol: 'admin' })
+    const atletaId = await crearAtleta()
+    const userId = (await crearUsuario({ rol: 'remero', atletaId })).id
+    await admin().from('atleta').update({ user_id: userId }).eq('id', atletaId)
+    const sesionId = await crearSesion(atletaId)
+    await admin().from('split').insert({ sesion_id: sesionId, orden: 1, tiempo_ds: 1100 })
+
+    const ruta = `${userId}/${randomUUID()}.jpg`
+    const { error: errSubida } = await admin().storage.from('capturas').upload(ruta, new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' })
+    expect(errSubida).toBeNull()
+    const { data: cap } = await admin().from('captura').insert({ storage_path: ruta, subida_por: userId }).select('id').single()
+    await admin().from('sesion').update({ captura_id: cap!.id }).eq('id', sesionId)
+
+    await eliminarAtleta(admin(), atletaId, ejecutor.id)
+    olvidarUsuario(userId)
+
+    for (const [tabla, col, val] of [
+      ['atleta', 'id', atletaId],
+      ['sesion', 'atleta_id', atletaId],
+      ['split', 'sesion_id', sesionId],
+      ['consentimiento', 'atleta_id', atletaId],
+      ['captura', 'id', cap!.id],
+    ] as const) {
+      const { count } = await admin().from(tabla).select('*', { count: 'exact', head: true }).eq(col, val)
+      expect(count, tabla).toBe(0)
+    }
+    const { data: u } = await admin().auth.admin.getUserById(userId)
+    expect(u?.user ?? null).toBeNull()
+    const { data: archivos } = await admin().storage.from('capturas').list(userId)
+    expect(archivos ?? []).toHaveLength(0)
+
+    const { data: reg } = await admin().from('registro_acceso').select('atleta_id, detalle').eq('accion', 'eliminar').eq('usuario_id', ejecutor.id)
+    expect(reg).toEqual([{ atleta_id: null, detalle: { atleta_id_eliminado: atletaId } }])
+  })
+
+  it('se puede repetir sin error (reintentable)', async () => {
+    const ejecutor = await crearUsuario({ rol: 'admin' })
+    const atletaId = await crearAtleta()
+    await eliminarAtleta(admin(), atletaId, ejecutor.id)
+    await expect(eliminarAtleta(admin(), atletaId, ejecutor.id)).resolves.toBeUndefined()
   })
 })

@@ -2,8 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { requerirStaff } from "@/lib/acceso/staff";
+import { requerirAdmin, requerirStaff } from "@/lib/acceso/staff";
 import { cambiarActivo, generarEnlaceParaAtleta, revocarConsentimiento } from "@/lib/atletas/administrar";
+import { eliminarAtleta } from "@/lib/atletas/eliminar";
 import { formDataAAtleta, mensajeAlta } from "@/lib/atletas/formulario";
 import { envPublico } from "@/lib/env";
 import { atletaSchema } from "@/lib/schemas/atleta";
@@ -60,6 +61,26 @@ export async function revocarConsentimientoAccion(fd: FormData): Promise<void> {
   const supabase = await crearClienteServidor();
   const r = await revocarConsentimiento(supabase, crearClienteAdmin(), id);
   volver(id, r.ok ? undefined : r.error);
+}
+
+/** Solo admin; exige escribir el apellido del atleta como confirmación. */
+export async function eliminarAtletaAccion(fd: FormData): Promise<void> {
+  const usuario = await requerirAdmin();
+  const id = idDe(fd);
+  const supabase = await crearClienteServidor();
+  const { data: atleta } = await supabase.from("atleta").select("apellido").eq("id", id).maybeSingle();
+  if (!atleta) redirect("/atletas");
+
+  const confirmacion = String(fd.get("confirmacion") ?? "").trim().toLowerCase();
+  if (confirmacion !== String(atleta.apellido).trim().toLowerCase()) {
+    volver(id, "Para eliminar, escribe el apellido del atleta exactamente.");
+  }
+  try {
+    await eliminarAtleta(crearClienteAdmin(), id, usuario.id);
+  } catch {
+    volver(id, "No se pudo eliminar todo. Intenta de nuevo; el proceso se puede repetir.");
+  }
+  redirect("/atletas");
 }
 
 export async function generarEnlaceAccion(atletaId: string): Promise<{ url: string } | { error: string }> {

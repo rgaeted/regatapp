@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { requerirStaff } from "@/lib/acceso/staff";
 import { crearClienteServidor } from "@/lib/supabase/server";
-import { cambiarActivoAccion, editarAtletaAccion, revocarConsentimientoAccion } from "./actions";
+import { cambiarActivoAccion, editarAtletaAccion, eliminarAtletaAccion, revocarConsentimientoAccion } from "./actions";
 import { EnlaceAcceso } from "./enlace-acceso";
 
 const campo = "h-14 w-full rounded-xl border border-zinc-300 bg-white px-4 text-lg";
@@ -11,7 +11,7 @@ const etiqueta = "flex flex-col gap-1 text-base font-medium text-zinc-700";
 const botonSecundario = "h-14 w-full rounded-xl bg-zinc-200 text-lg font-semibold text-zinc-900";
 
 export default async function FichaAtleta({ params, searchParams }: PageProps<"/atletas/[id]">) {
-  await requerirStaff();
+  const usuario = await requerirStaff();
   const { id: crudo } = await params;
   const id = z.uuid().safeParse(crudo);
   if (!id.success) notFound();
@@ -125,6 +125,27 @@ export default async function FichaAtleta({ params, searchParams }: PageProps<"/
             Bloquea el acceso del atleta y la carga de sesiones nuevas. No borra sus datos.
           </p>
         </form>
+      )}
+
+      <a href={`/atletas/${atleta.id}/exportar`} download className={`${botonSecundario} flex items-center justify-center`}>
+        Exportar todos sus datos
+      </a>
+
+      {usuario.rol === "admin" && (
+        <details className="rounded-xl border-2 border-red-700 p-4">
+          <summary className="cursor-pointer text-lg font-semibold text-red-700">Eliminar todos sus datos</summary>
+          <form action={eliminarAtletaAccion} className="mt-4 flex flex-col gap-3">
+            <input type="hidden" name="id" value={atleta.id} />
+            <p className="text-base">
+              Borra al atleta, sus sesiones, consentimientos, fotos y su cuenta. No se puede deshacer. Escribe el
+              apellido <strong>{atleta.apellido}</strong> para confirmar.
+            </p>
+            <input name="confirmacion" required autoComplete="off" className={campo} />
+            <button type="submit" className="h-14 w-full rounded-xl bg-red-700 text-lg font-semibold text-white">
+              Eliminar definitivamente
+            </button>
+          </form>
+        </details>
       )}
 
       <Link href="/atletas" className="pt-2 text-zinc-700 underline">Volver a atletas</Link>

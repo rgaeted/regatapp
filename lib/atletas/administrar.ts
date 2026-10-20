@@ -13,6 +13,13 @@ export type Resultado = { ok: true } | { ok: false; error: string }
 
 const SIN_ACCESO = 'No tienes acceso a este atleta.'
 
+/** ¿El usuario ve a este atleta? RLS decide: si no lo ve, la consulta vuelve vacía. */
+export async function atletaVisible(supabase: SupabaseClient, atletaId: string): Promise<boolean> {
+  const { data, error } = await supabase.from('atleta').select('id').eq('id', atletaId).maybeSingle()
+  if (error) throw new Error(`atleta: ${error.message}`)
+  return data !== null
+}
+
 export async function generarEnlaceParaAtleta(
   supabase: SupabaseClient,
   admin: SupabaseClient,
@@ -20,10 +27,7 @@ export async function generarEnlaceParaAtleta(
   atletaId: string,
   siteUrl: string,
 ): Promise<{ url: string } | { error: string }> {
-  // RLS: si el usuario no ve al atleta, la consulta vuelve vacía.
-  const { data: visible, error } = await supabase.from('atleta').select('id').eq('id', atletaId).maybeSingle()
-  if (error) throw new Error(`atleta: ${error.message}`)
-  if (!visible) return { error: SIN_ACCESO }
+  if (!(await atletaVisible(supabase, atletaId))) return { error: SIN_ACCESO }
 
   try {
     const usuarioId = await asegurarUsuarioAtleta(admin, atletaId)
