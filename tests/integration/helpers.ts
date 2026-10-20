@@ -43,6 +43,13 @@ export function admin(): SupabaseClient {
   return clienteAdmin;
 }
 
+// Cliente sin sesión (rol anon de PostgREST).
+export function clienteAnonimo(): SupabaseClient {
+  return createClient(URL_SUPABASE, ANON_KEY, opciones);
+}
+
+export const BUCKET_CAPTURAS = "capturas";
+
 function falla(contexto: string, error: { message: string } | null): void {
   if (error) throw new Error(`${contexto}: ${error.message}`);
 }
@@ -177,6 +184,20 @@ export async function limpiar(): Promise<void> {
   if (a.length) {
     await intentar("registro/atleta", db.from("registro_acceso").delete().in("atleta_id", a));
     await intentar("atleta", db.from("atleta").delete().in("id", a));
+  }
+  // Objetos de Storage: cada usuario sube solo a su carpeta <user_id>/ en capturas.
+  for (const id of u) {
+    const { data: objetos, error } = await db.storage.from(BUCKET_CAPTURAS).list(id, { limit: 1000 });
+    if (error) {
+      // Antes de la migración de RLS el bucket no existe: no hay nada que borrar.
+      if (!/not found/i.test(error.message)) errores.push(`storage/list ${id}: ${error.message}`);
+      continue;
+    }
+    if (objetos?.length) {
+      const rutas = objetos.map((o) => `${id}/${o.name}`);
+      const { error: errRm } = await db.storage.from(BUCKET_CAPTURAS).remove(rutas);
+      if (errRm) errores.push(`storage/remove ${id}: ${errRm.message}`);
+    }
   }
   for (const id of u) {
     const { error } = await db.auth.admin.deleteUser(id);
