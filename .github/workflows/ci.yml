@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Cancela las ejecuciones anteriores de la misma rama o PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Lint, tipos, tests unitarios y build. No necesita base de datos ni secretos:
+  # el build solo exige que las variables públicas estén definidas (valores ficticios).
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: clave-anonima-ficticia-solo-para-el-build
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # Node 24 es LTS activo
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - run: npm run build
+
+  # Tests de integración (RLS) contra un Supabase local levantado en el runner.
+  # Se omiten los servicios que los tests no usan para acortar el arranque.
+  integracion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: supabase start -x studio,imgproxy,realtime,edge-runtime,logflare,vector,mailpit,supavisor
+      - run: supabase db reset
+      - run: npm run env:local
+      - run: npm run test:integration
+      - name: Detener Supabase
+        if: always()
+        run: supabase stop --no-backup
