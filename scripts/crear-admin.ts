@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { crearUsuarioStaff } from "../lib/acceso/usuario";
 import { generarEnlace } from "../lib/acceso/enlace";
-import { entorno, fallar, mensajeDe } from "./comun";
+import { entorno, esEntornoLocal, fallar, mensajeDe } from "./comun";
 
 const USO = 'Uso: npm run crear-admin -- --nombre "Nombre" [--correo x@y.cl]';
 
@@ -22,15 +22,15 @@ const correo = valores.correo?.trim() || undefined;
 async function main(nombre: string, correo: string | undefined): Promise<void> {
   const { admin, siteUrl } = entorno();
 
-  let host: string;
-  try {
-    host = new URL(siteUrl).hostname;
-  } catch {
-    fallar("NEXT_PUBLIC_SITE_URL no es una URL válida.");
-  }
-  if (host !== "localhost" && host !== "127.0.0.1" && process.env.CONFIRMAR_PRODUCCION !== "1") {
+  // Se evalúa contra la base que se va a escribir (Supabase) y contra el sitio.
+  const local = esEntornoLocal([
+    ["NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL],
+    ["NEXT_PUBLIC_SITE_URL", siteUrl],
+  ]);
+  if (!local.ok && process.env.CONFIRMAR_PRODUCCION !== "1") {
     fallar(
-      `NEXT_PUBLIC_SITE_URL apunta a ${host}, que no es local. Para crear un admin ahí define CONFIRMAR_PRODUCCION=1.`,
+      `No se crea el admin: ${local.noLocales.join(" y ")} no apunta(n) a un host local. ` +
+        "Si es intencional, define CONFIRMAR_PRODUCCION=1.",
     );
   }
 

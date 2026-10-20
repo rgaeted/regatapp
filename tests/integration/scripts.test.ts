@@ -44,6 +44,8 @@ describe("scripts de acceso", () => {
     const atletaId = await crearAtleta();
     atletasUsados.push(atletaId);
     const r = correr("enlace-atleta", ["--atleta", atletaId]);
+    const { data: a } = await admin().from("atleta").select("user_id").eq("id", atletaId).single();
+    if (a?.user_id) registrarUsuario(a.user_id as string);
     expect(r.codigo).toBe(0);
     const lineas = r.stdout.trim().split(/\r?\n/);
     expect(lineas).toHaveLength(1);
@@ -51,8 +53,6 @@ describe("scripts de acceso", () => {
     sinSecretos(r.stdout);
     sinSecretos(r.stderr);
 
-    const { data: a } = await admin().from("atleta").select("user_id").eq("id", atletaId).single();
-    registrarUsuario(a!.user_id as string);
     expect((await resolverEnlace(admin(), tokenDe(lineas[0]))).ok).toBe(true);
   });
 
@@ -92,6 +92,8 @@ describe("scripts de acceso", () => {
   it("crear-admin imprime una URL, crea un admin y el enlace resuelve", async () => {
     const r = correr("crear-admin", ["--nombre", "Admin Prueba"], {
       NEXT_PUBLIC_SITE_URL: "http://localhost:3000",
+      // El proyecto dev es remoto por diseño: sin esto el guardia lo rechazaría.
+      CONFIRMAR_PRODUCCION: "1",
     });
     const lineas = r.stdout.trim().split(/\r?\n/);
     const { data: fila } = lineas[0]
@@ -118,5 +120,54 @@ describe("scripts de acceso", () => {
     expect(r.codigo).toBe(1);
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain("CONFIRMAR_PRODUCCION");
+  });
+
+  describe("guardia de entorno de crear-admin", () => {
+    async function usuarios(): Promise<number> {
+      const { data } = await admin().auth.admin.listUsers({ page: 1, perPage: 1000 });
+      return data?.users.length ?? -1;
+    }
+
+    it("rechaza Supabase remoto con sitio localhost y no crea ningún usuario", async () => {
+      const antes = await usuarios();
+      const r = correr("crear-admin", ["--nombre", "Admin Guardia"], {
+        NEXT_PUBLIC_SITE_URL: "http://localhost:3000",
+        CONFIRMAR_PRODUCCION: "",
+      });
+      expect(r.codigo).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toContain("NEXT_PUBLIC_SUPABASE_URL");
+      expect(r.stderr).not.toContain("NEXT_PUBLIC_SITE_URL");
+      sinSecretos(r.stderr);
+      expect(await usuarios()).toBe(antes);
+      const { count } = await admin().from("perfil").select("*", { count: "exact", head: true }).eq("nombre", "Admin Guardia");
+      expect(count).toBe(0);
+    });
+
+    it("rechaza ambas URL remotas sin la bandera", () => {
+      const r = correr("crear-admin", ["--nombre", "X"], {
+        NEXT_PUBLIC_SITE_URL: "https://staging.ejemplo.cl",
+        CONFIRMAR_PRODUCCION: "",
+      });
+      expect(r.codigo).toBe(1);
+      expect(r.stderr).toContain("NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SITE_URL");
+    });
+
+    it.each(["http://localhost.evil.com", "http://localhost@evil.com"])(
+      "rechaza %s en cualquiera de las dos variables antes de conectarse",
+      (falso) => {
+        const casos: Array<Record<string, string>> = [
+          { NEXT_PUBLIC_SUPABASE_URL: falso, NEXT_PUBLIC_SITE_URL: "http://localhost:3000" },
+          { NEXT_PUBLIC_SUPABASE_URL: "http://localhost:54321", NEXT_PUBLIC_SITE_URL: falso },
+        ];
+        for (const env of casos) {
+          const r = correr("crear-admin", ["--nombre", "X"], { ...env, CONFIRMAR_PRODUCCION: "" });
+          expect(r.codigo).toBe(1);
+          expect(r.stdout).toBe("");
+          expect(r.stderr).toContain("no apunta(n) a un host local");
+          expect(r.stderr).not.toMatch(/fetch|ENOTFOUND|ECONN/i);
+        }
+      },
+    );
   });
 });
