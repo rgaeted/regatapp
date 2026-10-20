@@ -10,7 +10,9 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test:unit": "vitest run --project unit --passWithNoTests",
     "test:integration": "vitest run --project integration --passWithNoTests",
-    "env:local": "node scripts/env-local.mjs"
+    "env:local": "node scripts/env-local.mjs",
+    "crear-admin": "tsx scripts/crear-admin.ts",
+    "enlace:atleta": "tsx scripts/enlace-atleta.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
