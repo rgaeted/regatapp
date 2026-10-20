@@ -1,0 +1,1 @@
+-- Sin datos de ejemplo todavía: los tests de integración crean sus propios datos.
