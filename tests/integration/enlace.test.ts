@@ -115,13 +115,49 @@ describe('generar y resolver enlaces', () => {
     expect(JSON.stringify(r)).not.toContain(token)
   })
 
-  it('un enlace nuevo no invalida el anterior: ambos resuelven hasta usarse', async () => {
+  it('un enlace nuevo reemplaza al anterior: t1 queda usado y verifyOtp(t1) falla; t2 funciona', async () => {
     const { usuarioId } = await atletaConUsuario()
     const t1 = await nuevoEnlace(usuarioId)
     const t2 = await nuevoEnlace(usuarioId)
     expect(t1).not.toBe(t2)
-    expect((await resolverEnlace(admin(), t1)).ok).toBe(true)
+    expect(await resolverEnlace(admin(), t1)).toEqual({ ok: false, motivo: 'usado' })
     expect((await resolverEnlace(admin(), t2)).ok).toBe(true)
+    const v1 = await clienteAnonimo().auth.verifyOtp({ type: 'magiclink', token_hash: t1 })
+    expect(v1.error).not.toBeNull()
+    const v2 = await clienteAnonimo().auth.verifyOtp({ type: 'magiclink', token_hash: t2 })
+    expect(v2.error).toBeNull()
+    expect(v2.data.session?.user.id).toBe(usuarioId)
+  })
+
+  it('generarEnlace rechaza atleta inactivo, consentimiento revocado y usuario sin perfil', async () => {
+    const a = await atletaConUsuario()
+    await admin().from('atleta').update({ activo: false }).eq('id', a.atletaId)
+    await expect(generarEnlace(admin(), { usuarioId: a.usuarioId, creadoPor: null, siteUrl: SITE })).rejects.toThrow(/acceso vigente/)
+
+    const b = await atletaConUsuario()
+    await admin().from('consentimiento').update({ revocado_en: new Date().toISOString() }).eq('atleta_id', b.atletaId)
+    await expect(generarEnlace(admin(), { usuarioId: b.usuarioId, creadoPor: null, siteUrl: SITE })).rejects.toThrow(/acceso vigente/)
+
+    const { data } = await admin().auth.admin.createUser({ email: `s-${randomUUID()}@test.invalid`, email_confirm: true })
+    registrarUsuario(data.user!.id)
+    await expect(generarEnlace(admin(), { usuarioId: data.user!.id, creadoPor: null, siteUrl: SITE })).rejects.toThrow(/acceso vigente/)
+
+    const { count } = await admin().from('enlace_acceso').select('*', { count: 'exact', head: true }).in('usuario_id', [a.usuarioId, b.usuarioId, data.user!.id])
+    expect(count).toBe(0)
+  })
+
+  it('asegurarUsuarioAtleta rechaza user_id de staff o de un usuario sin perfil', async () => {
+    for (const rol of ['entrenador', 'admin'] as const) {
+      const atletaId = await crearAtleta()
+      const staff = await crearUsuario({ rol, nombre: 'Staff' })
+      await admin().from('atleta').update({ user_id: staff.id }).eq('id', atletaId)
+      await expect(asegurarUsuarioAtleta(admin(), atletaId)).rejects.toThrow(/no es el remero/)
+    }
+    const { data } = await admin().auth.admin.createUser({ email: `s-${randomUUID()}@test.invalid`, email_confirm: true })
+    registrarUsuario(data.user!.id)
+    const atleta2 = await crearAtleta()
+    await admin().from('atleta').update({ user_id: data.user!.id }).eq('id', atleta2)
+    await expect(asegurarUsuarioAtleta(admin(), atleta2)).rejects.toThrow(/no es el remero/)
   })
 
   it('atleta inactivo -> sin_acceso y accesoVigente false', async () => {

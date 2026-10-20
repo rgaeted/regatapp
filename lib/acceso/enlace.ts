@@ -62,8 +62,10 @@ async function perfilConAcceso(admin: SupabaseClient, usuarioId: string): Promis
 }
 
 /**
- * Genera un enlace de acceso de 24 h y lo registra. No invalida enlaces
- * anteriores del mismo usuario.
+ * Genera un enlace de acceso de 24 h y lo registra. Rechaza (sin llamar a
+ * generateLink) si `accesoVigente` es false. GoTrue guarda un solo OTP por
+ * usuario y tipo: generar uno nuevo mata el anterior, así que los enlaces
+ * previos sin usar se marcan como reemplazados (`usado_en`, motivo `usado`).
  *
  * El llamador debe verificar que el usuario puede generar este enlace:
  * entrenador solo para atletas que entrena; solo admin para staff.
@@ -72,6 +74,9 @@ export async function generarEnlace(
   admin: SupabaseClient,
   opts: { usuarioId: string; creadoPor: string | null; siteUrl: string },
 ): Promise<string> {
+  if (!(await accesoVigente(admin, opts.usuarioId))) {
+    throw new Error("El usuario no tiene acceso vigente (sin perfil, atleta inactivo o consentimiento revocado)");
+  }
   const { data: u, error: errU } = await admin.auth.admin.getUserById(opts.usuarioId);
   const email = u?.user?.email;
   if (errU || !email) throw new Error(`usuario: ${errU?.message ?? "sin correo"}`);
@@ -79,6 +84,14 @@ export async function generarEnlace(
   const { data, error } = await admin.auth.admin.generateLink({ type: "magiclink", email });
   const hash = data?.properties?.hashed_token;
   if (error || !hash) throw new Error(`generateLink: ${error?.message ?? "sin token"}`);
+
+  // El OTP anterior ya no sirve en GoTrue: reflejarlo para que la página no lo ofrezca.
+  const { error: errSup } = await admin
+    .from("enlace_acceso")
+    .update({ usado_en: new Date().toISOString() })
+    .eq("usuario_id", opts.usuarioId)
+    .is("usado_en", null);
+  if (errSup) throw new Error(`enlace_acceso: ${errSup.message}`);
 
   const { error: errIns } = await admin.from("enlace_acceso").insert({
     usuario_id: opts.usuarioId,
@@ -103,7 +116,16 @@ export async function generarEnlace(
   return `${opts.siteUrl}/entrar?t=${hash}`;
 }
 
-/** Solo lectura: nunca llama a verifyOtp, así la previsualización no consume el enlace. */
+/**
+ * Solo lectura: nunca llama a verifyOtp, así la previsualización no consume el enlace.
+ *
+ * Los chequeos vencido/usado/sin_acceso son solo una puerta de UX, NO autorización:
+ * el hashed_token es una credencial al portador que se puede enviar directo a
+ * GoTrue. Quien llame (la acción `entrar` de la Task 8, el layout de (app)) DEBE
+ * volver a comprobar `accesoVigente` tras verifyOtp y en cada petición. Además,
+ * desactivar al atleta o revocar el consentimiento no mata por sí solo un OTP
+ * ya emitido (pendiente para el flujo de revocación de la fase 1).
+ */
 export async function resolverEnlace(admin: SupabaseClient, token: string): Promise<ResultadoEnlace> {
   if (typeof token !== "string" || !FORMATO_TOKEN.test(token)) {
     return { ok: false, motivo: "inexistente" };
@@ -128,7 +150,10 @@ export async function resolverEnlace(admin: SupabaseClient, token: string): Prom
  * is null`); repetirlo es un no-op. La garantía real de un solo uso la da
  * Supabase al consumir el OTP en verifyOtp; esto solo refleja el estado.
  *
- * El llamador debe invocarlo únicamente tras un verifyOtp exitoso.
+ * Es solo contable, no una barrera: el token sigue siendo canjeable en GoTrue
+ * mientras no haya vencido o se haya consumido. Quien llame DEBE re-comprobar
+ * `accesoVigente` tras verifyOtp y en cada petición. Invocarlo solo tras un
+ * verifyOtp exitoso.
  */
 export async function marcarUsado(admin: SupabaseClient, token: string): Promise<void> {
   const { error } = await admin

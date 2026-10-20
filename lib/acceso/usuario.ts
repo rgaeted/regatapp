@@ -41,7 +41,22 @@ export async function asegurarUsuarioAtleta(admin: SupabaseClient, atletaId: str
     .maybeSingle();
   if (errAtleta) throw new Error(`atleta: ${errAtleta.message}`);
   if (!atleta) throw new Error("El atleta no existe");
-  if (atleta.user_id) return atleta.user_id as string;
+  if (atleta.user_id) {
+    // Nunca devolver una cuenta ajena: debe ser el remero de ESTE atleta.
+    const existente = atleta.user_id as string;
+    const { data: perfil, error: errP } = await admin
+      .from("perfil")
+      .select("rol, atleta_id")
+      .eq("user_id", existente)
+      .maybeSingle();
+    if (errP) throw new Error(`perfil: ${errP.message}`);
+    if (!perfil || perfil.rol !== "remero" || perfil.atleta_id !== atletaId) {
+      throw new Error("atleta.user_id apunta a una cuenta que no es el remero de este atleta");
+    }
+    const { data: u, error: errU } = await admin.auth.admin.getUserById(existente);
+    if (errU || !u?.user) throw new Error("El usuario de acceso del atleta no existe");
+    return existente;
+  }
 
   const correo = correoSintetico("a", atletaId);
   let usuarioId: string | null = null;
