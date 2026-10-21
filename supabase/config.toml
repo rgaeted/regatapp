@@ -218,8 +218,10 @@ web3 = 30
 # secret = ""
 
 [auth.email]
-# Allow/disallow new user signups via email to your project.
-enable_signup = false
+# Activa el proveedor de correo (necesario para entrar con contraseña: staff y tests). Con
+# false GoTrue responde "Email logins are disabled". El registro público sigue cerrado por
+# [auth] enable_signup = false: las cuentas las crea solo el servidor.
+enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
