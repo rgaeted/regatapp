@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { requerirUsuario } from "@/lib/acceso/actual";
 import { atletaPorDefecto, atletasVisibles, COOKIE_ULTIMO_ATLETA } from "@/lib/atletas/lista";
 import { listarSesiones } from "@/lib/sesion/listar";
+import { verificarSesionAccion } from "./actions";
 import { crearClienteServidor } from "@/lib/supabase/server";
 
 const TIPOS: Record<string, string> = { entrenamiento: "Entrenamiento", test: "Test", competencia: "Competencia" };
@@ -83,6 +84,15 @@ export default async function PaginaSesiones({ searchParams }: PageProps<"/sesio
                   <span className="rounded bg-amber-100 px-2 py-0.5 text-sm font-medium text-amber-900">
                     Sin verificar
                   </span>
+                )}
+                {!f.verificado && (
+                  <form action={verificarSesionAccion}>
+                    <input type="hidden" name="id" value={f.id} />
+                    <input type="hidden" name="atleta" value={atletaId} />
+                    <button type="submit" className="h-10 rounded-lg bg-zinc-900 px-3 text-sm font-semibold text-white">
+                      Marcar como verificada
+                    </button>
+                  </form>
                 )}
               </div>
             </li>
