@@ -21,7 +21,10 @@ async function fijarAcceso(admin: SupabaseClient, usuarioId: string, usuario: st
   try {
     await establecerClaveStaff(admin, usuarioId, v.usuario, clave)
   } catch (e) {
-    if (/already|registered|duplicate|exist/i.test(e instanceof Error ? e.message : '')) throw new ErrorUsuario(USUARIO_REPETIDO)
+    const codigo = (e instanceof Error ? (e.cause as { code?: string } | undefined)?.code : undefined) ?? ''
+    const mensaje = e instanceof Error ? e.message : ''
+    // email_exists (GoTrue) o la unicidad de perfil.usuario (23505 / duplicate key).
+    if (codigo === 'email_exists' || /already|registered|duplicate|exist/i.test(mensaje)) throw new ErrorUsuario(USUARIO_REPETIDO)
     throw e
   }
   return v.usuario

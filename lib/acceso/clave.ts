@@ -61,7 +61,8 @@ export async function establecerClaveStaff(
     password: clave,
     email_confirm: true,
   })
-  if (error) throw new Error(`No se pudo fijar la contraseña: ${error.message}`)
+  // `cause` conserva el código de GoTrue (p. ej. email_exists) para quien necesite distinguirlo.
+  if (error) throw new Error(`No se pudo fijar la contraseña: ${error.message}`, { cause: error })
   // El usuario también queda en el perfil (único), para mostrarlo y vincular cuentas.
   const { error: errUsuario } = await admin.from('perfil').update({ usuario: normalizado }).eq('user_id', usuarioId)
   if (errUsuario) throw new Error(`perfil: ${errUsuario.message}`)
