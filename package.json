@@ -14,7 +14,8 @@
     "crear-admin": "tsx scripts/crear-admin.ts",
     "enlace:atleta": "tsx scripts/enlace-atleta.ts",
     "fijar-clave": "tsx scripts/fijar-clave.ts",
-    "ocr:evaluar": "tsx scripts/evaluar-ocr.ts"
+    "ocr:evaluar": "tsx scripts/evaluar-ocr.ts",
+    "datos-prueba": "tsx scripts/datos-prueba.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.137.0",

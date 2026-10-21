@@ -41,3 +41,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*
+
+# fotos de prueba para evaluar el OCR (se descargan localmente, no se versionan)
+/fotos-prueba/
