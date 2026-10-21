@@ -12,7 +12,8 @@ import { correoStaff, normalizarUsuario, validarClave } from './clave'
 /** Tope global de cuentas nuevas por hora: frena el relleno automático de la lista de pendientes. */
 export const TOPE_CUENTAS_POR_HORA = 20
 
-export const superaTope = (nuevasEnLaUltimaHora: number): boolean => nuevasEnLaUltimaHora >= TOPE_CUENTAS_POR_HORA
+export const superaTope = (nuevasEnLaUltimaHora: number, tope: number = TOPE_CUENTAS_POR_HORA): boolean =>
+  nuevasEnLaUltimaHora >= tope
 
 export type DatosRegistro = { nombre: string; usuario: string; clave: string }
 export type ErroresRegistro = Partial<Record<keyof DatosRegistro, string>>
@@ -38,14 +39,18 @@ export type ResultadoRegistro = { ok: true; usuarioId: string } | { ok: false; e
  * Crea la cuenta pendiente. Recibe service role y NO autoriza: es una operación
  * pública a propósito, por eso solo puede producir un perfil `remero` sin atleta.
  */
-export async function registrarCuenta(admin: SupabaseClient, datos: DatosRegistro): Promise<ResultadoRegistro> {
+export async function registrarCuenta(
+  admin: SupabaseClient,
+  datos: DatosRegistro,
+  opciones: { tope?: number } = {},
+): Promise<ResultadoRegistro> {
   const desde = new Date(Date.now() - 3_600_000).toISOString()
   const { count, error: errCuenta } = await admin
     .from('perfil')
     .select('user_id', { count: 'exact', head: true })
     .gte('creado_en', desde)
   if (errCuenta) throw new Error(`perfil: ${errCuenta.message}`)
-  if (superaTope(count ?? 0)) return { ok: false, error: 'Hay muchos registros ahora. Intenta de nuevo en un rato.' }
+  if (superaTope(count ?? 0, opciones.tope)) return { ok: false, error: 'Hay muchos registros ahora. Intenta de nuevo en un rato.' }
 
   const { data, error } = await admin.auth.admin.createUser({
     email: correoStaff(datos.usuario),

@@ -13,7 +13,8 @@ const CLAVE = 'una-clave-larga-1'
 
 async function registrar(nombre = 'Cuenta Test') {
   const usuario = unico()
-  const r = await registrarCuenta(admin(), { nombre, usuario, clave: CLAVE })
+  // Tope alto: la corrida de tests registra muchas cuentas en una hora (el tope real se prueba aparte).
+  const r = await registrarCuenta(admin(), { nombre, usuario, clave: CLAVE }, { tope: 10_000 })
   expect(r.ok).toBe(true)
   if (!r.ok) throw new Error(r.error)
   registrarUsuario(r.usuarioId)
@@ -21,6 +22,14 @@ async function registrar(nombre = 'Cuenta Test') {
 }
 
 describe('registrarCuenta', () => {
+  it('con el tope superado rechaza el registro y no crea nada', async () => {
+    const usuario = unico()
+    const r = await registrarCuenta(admin(), { nombre: 'Tope', usuario, clave: CLAVE }, { tope: 0 })
+    expect(r).toEqual({ ok: false, error: 'Hay muchos registros ahora. Intenta de nuevo en un rato.' })
+    const { count } = await admin().from('perfil').select('*', { count: 'exact', head: true }).eq('usuario', usuario)
+    expect(count).toBe(0)
+  })
+
   it('crea una cuenta pendiente: rol remero, sin atleta, con su usuario', async () => {
     const { usuario, usuarioId } = await registrar('Ana Nueva')
     const { data } = await admin().from('perfil').select('rol, atleta_id, nombre, usuario').eq('user_id', usuarioId).single()

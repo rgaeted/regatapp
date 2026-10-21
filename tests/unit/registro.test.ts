@@ -38,6 +38,11 @@ describe('validarRegistro', () => {
 })
 
 describe('tope de cuentas nuevas por hora', () => {
+  it('acepta un tope distinto para pruebas', () => {
+    expect(superaTope(3, 3)).toBe(true)
+    expect(superaTope(2, 3)).toBe(false)
+  })
+
   it('se supera al llegar al tope', () => {
     expect(superaTope(TOPE_CUENTAS_POR_HORA - 1)).toBe(false)
     expect(superaTope(TOPE_CUENTAS_POR_HORA)).toBe(true)
