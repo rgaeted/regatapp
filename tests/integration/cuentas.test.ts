@@ -4,7 +4,7 @@ import { correoStaff, iniciarConClave } from '@/lib/acceso/clave'
 import { estadoCuenta } from '@/lib/acceso/cuenta'
 import { registrarCuenta } from '@/lib/acceso/registro'
 import { cuentasPendientes, desvincularCuenta, eliminarCuentaPendiente, vincularCuenta } from '@/lib/acceso/vincular'
-import { admin, asignar, clienteAnonimo, crearAtleta, crearUsuario, limpiar, registrarUsuario } from './helpers'
+import { admin, asignar, clienteAnonimo, crearAtleta, crearUsuario, limpiar, olvidarUsuario, registrarUsuario } from './helpers'
 
 afterAll(limpiar)
 
@@ -195,6 +195,7 @@ describe('eliminarCuentaPendiente', () => {
   it('borra una cuenta pendiente por completo', async () => {
     const { usuarioId } = await registrar()
     expect(await eliminarCuentaPendiente(admin(), usuarioId)).toEqual({ ok: true })
+    olvidarUsuario(usuarioId) // ya no existe: limpiar() no debe intentar borrarlo
     expect((await admin().auth.admin.getUserById(usuarioId)).data.user ?? null).toBeNull()
     expect((await cuentasPendientes(admin())).some((c) => c.usuarioId === usuarioId)).toBe(false)
   })
