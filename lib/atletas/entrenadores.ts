@@ -18,6 +18,15 @@ const USUARIO_REPETIDO = 'Ese usuario ya existe.'
 async function fijarAcceso(admin: SupabaseClient, usuarioId: string, usuario: string, clave: string): Promise<string> {
   const v = validarCredenciales(usuario, clave)
   if (!v.ok) throw new ErrorUsuario(Object.values(v.errores)[0])
+  // perfil.usuario es la fuente de verdad de los usuarios: se comprueba antes de tocar Auth.
+  const { data: existente, error: errBusca } = await admin
+    .from('perfil')
+    .select('user_id')
+    .eq('usuario', v.usuario)
+    .neq('user_id', usuarioId)
+    .maybeSingle()
+  if (errBusca) throw new Error(`perfil: ${errBusca.message}`)
+  if (existente) throw new ErrorUsuario(USUARIO_REPETIDO)
   try {
     await establecerClaveStaff(admin, usuarioId, v.usuario, clave)
   } catch (e) {
