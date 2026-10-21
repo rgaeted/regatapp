@@ -32,38 +32,51 @@ const PerfilAcceso = z.object({
   nombre: z.string(),
   atleta_id: z.string().nullable(),
 });
-// Fila de perfil con el atleta embebido (FK perfil.atleta_id, a lo más uno).
-const FilaPerfil = PerfilAcceso.extend({
-  atleta: z.object({ activo: z.boolean() }).nullable(),
+// Fila de perfil con el atleta y sus consentimientos embebidos (FK perfil.atleta_id y
+// consentimiento.atleta_id): una sola consulta trae todo lo que la regla necesita.
+const FilaCuenta = PerfilAcceso.extend({
+  usuario: z.string().nullable().optional(),
+  atleta: z
+    .object({ activo: z.boolean(), consentimiento: z.array(z.object({ revocado_en: z.string().nullable() })) })
+    .nullable(),
 });
 
+export type CuentaLeida = { perfil: PerfilAcceso & { usuario: string | null }; tieneAcceso: boolean };
+
 /**
- * LA regla de acceso, en un solo lugar (enlaces, canje y la puerta de cada
- * petición): staff con perfil; remero con atleta activo y consentimiento
- * vigente. Devuelve el perfil si el usuario puede entrar hoy, null si no.
- * Dos consultas: perfil + atleta embebido, y consentimiento.
+ * LA regla de acceso, en un solo lugar y sobre una sola fila: staff con perfil;
+ * remero con atleta activo y al menos un consentimiento sin revocar (misma regla
+ * que consentimiento_vigente()). Una fila con forma inesperada lanza: jamás se
+ * interpreta como acceso.
  */
-export async function perfilConAcceso(admin: SupabaseClient, usuarioId: string): Promise<PerfilAcceso | null> {
+export function evaluarCuenta(fila: unknown): CuentaLeida {
+  const { atleta, usuario, ...perfil } = FilaCuenta.parse(fila);
+  const tieneAcceso =
+    perfil.rol !== "remero" ||
+    (perfil.atleta_id !== null && atleta !== null && atleta.activo && atleta.consentimiento.some((c) => c.revocado_en === null));
+  return { perfil: { ...perfil, usuario: usuario ?? null }, tieneAcceso };
+}
+
+/** Perfil y acceso de una cuenta con UNA consulta (null si no tiene perfil). */
+export async function leerCuenta(admin: SupabaseClient, usuarioId: string): Promise<CuentaLeida | null> {
   const { data, error } = await admin
     .from("perfil")
-    .select("rol, nombre, atleta_id, atleta(activo)")
+    .select("rol, nombre, atleta_id, usuario, atleta(activo, consentimiento(revocado_en))")
     .eq("user_id", usuarioId)
     .maybeSingle();
   if (error) throw new Error(`perfil: ${error.message}`);
-  if (!data) return null;
-  const { atleta, ...perfil } = FilaPerfil.parse(data);
-  if (perfil.rol !== "remero") return perfil;
-  if (!perfil.atleta_id || !atleta?.activo) return null;
+  return data ? evaluarCuenta(data) : null;
+}
 
-  // Misma regla que consentimiento_vigente(): existe alguno sin revocar.
-  const { data: cons, error: errC } = await admin
-    .from("consentimiento")
-    .select("id")
-    .eq("atleta_id", perfil.atleta_id)
-    .is("revocado_en", null)
-    .limit(1);
-  if (errC) throw new Error(`consentimiento: ${errC.message}`);
-  return cons.length > 0 ? perfil : null;
+/**
+ * Devuelve el perfil si el usuario puede entrar hoy, null si no (enlaces, canje y
+ * la puerta de cada petición usan esta misma regla).
+ */
+export async function perfilConAcceso(admin: SupabaseClient, usuarioId: string): Promise<PerfilAcceso | null> {
+  const cuenta = await leerCuenta(admin, usuarioId);
+  if (!cuenta?.tieneAcceso) return null;
+  const { rol, nombre, atleta_id } = cuenta.perfil;
+  return { rol, nombre, atleta_id };
 }
 
 /**

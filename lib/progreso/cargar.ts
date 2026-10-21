@@ -11,21 +11,24 @@ export async function cargarProgreso(
   supabase: SupabaseClient,
   atletaId: string,
 ): Promise<{ filas: FilaProgreso[]; sinVerificar: number }> {
-  const filas = await leerTodo<FilaProgreso>('sesiones', (desde, hasta) =>
+  // Las dos lecturas son independientes: en paralelo (cada ida y vuelta a la base suma tiempo).
+  const [filas, { count, error }] = await Promise.all([
+    leerTodo<FilaProgreso>('sesiones', (desde, hasta) =>
+      supabase
+        .from('v_sesion_calculada')
+        .select('id, fecha, tipo, modalidad, distancia_m, tiempo_ds')
+        .eq('atleta_id', atletaId)
+        .eq('verificado', true)
+        .order('fecha', { ascending: true })
+        .order('id')
+        .range(desde, hasta),
+    ),
     supabase
       .from('v_sesion_calculada')
-      .select('id, fecha, tipo, modalidad, distancia_m, tiempo_ds')
+      .select('id', { count: 'exact', head: true })
       .eq('atleta_id', atletaId)
-      .eq('verificado', true)
-      .order('fecha', { ascending: true })
-      .order('id')
-      .range(desde, hasta),
-  )
-  const { count, error } = await supabase
-    .from('v_sesion_calculada')
-    .select('id', { count: 'exact', head: true })
-    .eq('atleta_id', atletaId)
-    .eq('verificado', false)
+      .eq('verificado', false),
+  ])
   if (error) throw new Error(`sesiones: ${error.message}`)
   return { filas, sinVerificar: count ?? 0 }
 }

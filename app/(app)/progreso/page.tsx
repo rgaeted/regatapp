@@ -43,12 +43,13 @@ export default async function PaginaProgreso({ searchParams }: PageProps<"/progr
     );
   }
 
-  // Un tercero que mira el progreso de un atleta queda registrado (diseño §5.2).
+  // Un tercero que mira el progreso de un atleta queda registrado (diseño §5.2), en paralelo con la lectura.
+  let registro: PromiseLike<unknown> = Promise.resolve();
   if (atletaId !== usuario.atletaId) {
-    await supabase.rpc("registrar_acceso", { p_atleta_id: atletaId, p_accion: "ver_progreso", p_detalle: null });
+    registro = supabase.rpc("registrar_acceso", { p_atleta_id: atletaId, p_accion: "ver_progreso", p_detalle: null });
   }
 
-  const { filas, sinVerificar } = await cargarProgreso(supabase, atletaId);
+  const [{ filas, sinVerificar }] = await Promise.all([cargarProgreso(supabase, atletaId), registro]);
   const resumen = resumenProgreso(filas, sinVerificar);
   const records = recordsPorDistancia(filas);
   const distancias = distanciasConCurva(filas);

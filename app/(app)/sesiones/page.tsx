@@ -28,12 +28,13 @@ export default async function PaginaSesiones({ searchParams }: PageProps<"/sesio
     );
   }
 
-  // Un tercero que mira a un atleta queda registrado (diseño §5.2).
-  if (atletaId !== usuario.atletaId) {
-    await supabase.rpc("registrar_acceso", { p_atleta_id: atletaId, p_accion: "ver_sesiones", p_detalle: null });
-  }
-
-  const filas = await listarSesiones(supabase, atletaId);
+  // Un tercero que mira a un atleta queda registrado (diseño §5.2). Va en paralelo con la lectura:
+  // son independientes y cada ida y vuelta a la base suma tiempo.
+  const registro =
+    atletaId !== usuario.atletaId
+      ? supabase.rpc("registrar_acceso", { p_atleta_id: atletaId, p_accion: "ver_sesiones", p_detalle: null })
+      : Promise.resolve();
+  const [filas] = await Promise.all([listarSesiones(supabase, atletaId), registro]);
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-6 py-8 text-lg">
       <h1 className="text-2xl font-semibold text-zinc-900">Sesiones</h1>
