@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sesionInputSchema, type SesionInput } from '@/lib/schemas/sesion'
 
+/** Datos de la foto de la que salió la sesión (fase 2). */
+export type OrigenFoto = { captura_id: string; verificado: boolean; editado_manual: boolean }
+
 export type ResultadoGuardar = { ok: true; id: string } | { ok: false; error: string }
 
 const SIN_PERMISO =
@@ -13,11 +16,15 @@ const GENERICO = 'No se pudo guardar la sesión. Intenta de nuevo.'
  * con las políticas RLS del usuario). Reintentar con el mismo `id` es seguro.
  * Nunca devuelve mensajes SQL al usuario.
  */
-export async function guardarSesion(supabase: SupabaseClient, input: SesionInput): Promise<ResultadoGuardar> {
+export async function guardarSesion(
+  supabase: SupabaseClient,
+  input: SesionInput,
+  foto?: OrigenFoto,
+): Promise<ResultadoGuardar> {
   const valido = sesionInputSchema.safeParse(input)
   if (!valido.success) return { ok: false, error: 'Revisa los datos de la sesión.' }
   const { splits, ...sesion } = valido.data
-  const { data, error } = await supabase.rpc('guardar_sesion', { p_sesion: sesion, p_splits: splits })
+  const { data, error } = await supabase.rpc('guardar_sesion', { p_sesion: sesion, p_splits: splits, p_ocr: foto ?? null })
   if (error) {
     // 42501 = insufficient_privilege: RLS (consentimiento, atleta inactivo o ajeno).
     // 23505: el id ya existe con otros datos (ver la migración 000006).

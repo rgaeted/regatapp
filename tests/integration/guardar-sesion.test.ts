@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { guardarSesion } from '@/lib/sesion/guardar'
 import type { SesionInput } from '@/lib/schemas/sesion'
-import { admin, asignar, crearAtleta, crearUsuario, limpiar } from './helpers'
+import { admin, asignar, crearAtleta, crearUsuario, limpiar, registrarCaptura } from './helpers'
 
 afterAll(limpiar)
 
@@ -100,5 +100,57 @@ describe('guardar_sesion', () => {
     })
     expect(r.error).not.toBeNull()
     expect(await contar('sesion', 'id', input.id)).toBe(0)
+  })
+})
+
+describe('guardar_sesion desde una foto', () => {
+  async function capturaDe(userId: string): Promise<string> {
+    const { data, error } = await admin()
+      .from('captura')
+      .insert({ storage_path: `${userId}/${randomUUID()}.jpg`, subida_por: userId })
+      .select('id')
+      .single()
+    expect(error).toBeNull()
+    registrarCaptura(data!.id as string)
+    return data!.id as string
+  }
+
+  it('confirmada: origen ocr_foto, verificada, captura enlazada y editado_manual', async () => {
+    const { cliente, id: entId, atletaId } = await entrenadorConAtleta()
+    const capturaId = await capturaDe(entId)
+    const input = sesion(atletaId)
+    const r = await guardarSesion(cliente, input, { captura_id: capturaId, verificado: true, editado_manual: true })
+    expect(r.ok).toBe(true)
+    const { data } = await admin().from('sesion').select('origen, verificado, captura_id').eq('id', input.id).single()
+    expect(data).toEqual({ origen: 'ocr_foto', verificado: true, captura_id: capturaId })
+    const { data: cap } = await admin().from('captura').select('editado_manual').eq('id', capturaId).single()
+    expect(cap?.editado_manual).toBe(true)
+  })
+
+  it('guardada sin revisar: verificado = false (queda fuera de récords)', async () => {
+    const { cliente, id: entId, atletaId } = await entrenadorConAtleta()
+    const capturaId = await capturaDe(entId)
+    const input = sesion(atletaId)
+    await guardarSesion(cliente, input, { captura_id: capturaId, verificado: false, editado_manual: false })
+    const { data } = await admin().from('sesion').select('origen, verificado').eq('id', input.id).single()
+    expect(data).toEqual({ origen: 'ocr_foto', verificado: false })
+  })
+
+  it('una captura de otro usuario es rechazada y no queda nada', async () => {
+    const { cliente, atletaId } = await entrenadorConAtleta()
+    const otro = await crearUsuario({ rol: 'entrenador' })
+    const capturaAjena = await capturaDe(otro.id)
+    const input = sesion(atletaId)
+    const r = await guardarSesion(cliente, input, { captura_id: capturaAjena, verificado: true, editado_manual: false })
+    expect(r.ok).toBe(false)
+    expect(await contar('sesion', 'id', input.id)).toBe(0)
+  })
+
+  it('sin foto sigue siendo manual y verificada (compatibilidad con la fase 1)', async () => {
+    const { cliente, atletaId } = await entrenadorConAtleta()
+    const input = sesion(atletaId)
+    await guardarSesion(cliente, input)
+    const { data } = await admin().from('sesion').select('origen, verificado').eq('id', input.id).single()
+    expect(data).toEqual({ origen: 'manual', verificado: true })
   })
 })

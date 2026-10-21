@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { AtletaResumen } from "@/lib/atletas/lista";
+import { camposDudosos, lecturaAEstado, type CampoOcr, type LecturaOcr } from "@/lib/ocr/lectura";
 import { digitosATiempo, digitosDelTexto, formatearDigitos, interpretarTiempoPegado } from "@/lib/sesion/digitos";
 import { diaAnterior } from "@/lib/fechas";
 import { hoySantiago } from "@/lib/schemas/consentimiento";
@@ -34,14 +35,35 @@ const chip = (activo: boolean) =>
 const campo = "h-14 w-full rounded-xl border border-zinc-300 bg-white px-4 text-xl";
 const etiqueta = "text-base font-medium text-zinc-700";
 
+const AVISOS: Record<string, string> = {
+  vacia: "No pudimos leer la pantalla en la foto. Completa los datos a mano.",
+  sin_configurar: "La lectura automática todavía no está activada. Completa los datos a mano.",
+  imagen: "No se pudo procesar la foto. Completa los datos a mano.",
+};
+const AMBAR = "border-amber-500 bg-amber-50";
+
 type Props = {
   atletas: AtletaResumen[];
   atletaInicial: string;
   mostrarSelector: boolean;
+  /** Foto de la que se leyó la sesión (fase 2); sin ella es carga manual. */
+  capturaId?: string | null;
+  lectura?: LecturaOcr | null;
+  aviso?: string;
 };
 
-export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Props) {
-  const [e, setE] = useState<EstadoFormulario>(() => estadoInicial(crypto.randomUUID(), atletaInicial, new Date()));
+export function FormularioSesion({ atletas, atletaInicial, mostrarSelector, capturaId = null, lectura = null, aviso }: Props) {
+  const [e, setE] = useState<EstadoFormulario>(() => {
+    const base = estadoInicial(crypto.randomUUID(), atletaInicial, new Date());
+    return lectura ? lecturaAEstado(lectura, base) : base;
+  });
+  // Tras "atrás" desde otra pantalla la foto ya se usó: se parte de un formulario limpio.
+  const [usarFoto, setUsarFoto] = useState(true);
+  const dudosos = useMemo(() => new Set<CampoOcr>(lectura ? camposDudosos(lectura) : []), [lectura]);
+  const [tocados, setTocados] = useState<Set<CampoOcr>>(new Set());
+  const marcar = (c: CampoOcr) => setTocados((t) => (t.has(c) ? t : new Set(t).add(c)));
+  const dudoso = (c: CampoOcr) => usarFoto && dudosos.has(c) && !tocados.has(c);
+  const hayFoto = usarFoto && capturaId !== null;
   const [error, setError] = useState("");
   const [otra, setOtra] = useState(false);
   const [pendiente, empezar] = useTransition();
@@ -54,6 +76,7 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Pr
     const alMostrar = (ev: PageTransitionEvent) => {
       if (!ev.persisted) return;
       setE(estadoInicial(crypto.randomUUID(), atletaInicial, new Date()));
+      setUsarFoto(false);
       setOtra(false);
       setError("");
     };
@@ -75,6 +98,7 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Pr
   const elegirCantidad = (n: number) => {
     const splitsDigitos = Array.from({ length: n }, (_, i) => e.splitsDigitos[i] ?? "");
     cambiar({ nSplits: n, splitsDigitos });
+    marcar("splits");
   };
 
   const cambiarSplit = (i: number, texto: string, pegado = false) => {
@@ -82,6 +106,7 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Pr
     const splitsDigitos = [...e.splitsDigitos];
     splitsDigitos[i] = digitos;
     cambiar({ splitsDigitos });
+    marcar("splits");
     if (digitos.length >= DIGITOS_SPLIT) irAlSiguiente(i);
   };
 
@@ -91,7 +116,7 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Pr
     else refGuardar.current?.focus();
   };
 
-  const guardar = () => {
+  const guardar = (sinRevisar = false) => {
     setError("");
     const estado = { ...e, fecha: new Date().toISOString() };
     const armado = armarSesionInput(estado);
@@ -101,22 +126,34 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Pr
     }
     empezar(async () => {
       // En éxito la acción redirige y esta promesa no resuelve con valor.
-      const r = await guardarSesionAccion(estado);
+      const r = await guardarSesionAccion(estado, hayFoto ? { capturaId: capturaId as string, sinRevisar } : null);
       if (r?.error) setError(r.error);
     });
   };
 
-  const extra = (clave: keyof EstadoFormulario["extras"], texto: string, modo: "numeric" | "decimal" | "text" = "numeric") => (
+  const extra = (
+    clave: keyof EstadoFormulario["extras"],
+    texto: string,
+    modo: "numeric" | "decimal" | "text" = "numeric",
+    ocr?: CampoOcr,
+  ) => (
     <label className="flex flex-col gap-1">
-      <span className={etiqueta}>{texto}</span>
+      <span className={etiqueta}>
+        {texto}
+        {ocr && dudoso(ocr) && <span className="ml-2 text-sm font-semibold text-amber-700">Revisa</span>}
+      </span>
       <input
-        className={campo}
+        className={`${campo} ${ocr && dudoso(ocr) ? AMBAR : ""}`}
         inputMode={modo}
         value={e.extras[clave]}
-        onChange={(ev) => cambiar({ extras: { ...e.extras, [clave]: ev.target.value } })}
+        onChange={(ev) => {
+          cambiar({ extras: { ...e.extras, [clave]: ev.target.value } });
+          if (ocr) marcar(ocr);
+        }}
       />
     </label>
   );
+  const abrirMasDatos = hayFoto && (["spm_promedio", "fc_promedio", "calorias", "factor_arrastre"] as CampoOcr[]).some((c) => dudoso(c));
 
   const resumenSuma = useMemo(() => {
     if (diferencia === 0 || totalDs === null) return "";
@@ -129,10 +166,21 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Pr
       className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pt-8 text-lg"
       onSubmit={(ev) => {
         ev.preventDefault();
-        guardar();
+        guardar(false);
       }}
     >
       <h1 className="text-2xl font-semibold text-zinc-900">Nueva sesión</h1>
+
+      {hayFoto && lectura && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-base text-amber-900">
+          Leído de la foto. Revisa los campos marcados en ámbar y confirma.
+        </p>
+      )}
+      {hayFoto && !lectura && (
+        <p className="rounded-lg bg-zinc-100 px-3 py-2 text-base text-zinc-700">
+          {(aviso && AVISOS[aviso]) || "No hay datos leídos de la foto. Completa los datos a mano."}
+        </p>
+      )}
 
       {mostrarSelector && (
         <label className="flex flex-col gap-1">
@@ -156,42 +204,58 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Pr
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className={etiqueta}>Distancia (m)</span>
+        <span className={etiqueta}>
+          Distancia (m)
+          {dudoso("distancia_m") && <span className="ml-2 text-sm font-semibold text-amber-700">Revisa</span>}
+        </span>
         <div className="flex flex-wrap gap-2">
           {DISTANCIAS.map((d) => (
-            <button key={d} type="button" className={chip(e.distancia === String(d))} onClick={() => cambiar({ distancia: String(d) })}>
+            <button key={d} type="button" className={chip(e.distancia === String(d))} onClick={() => { cambiar({ distancia: String(d) }); marcar("distancia_m"); }}>
               {d}
             </button>
           ))}
         </div>
         <input
-          className={campo}
+          className={`${campo} ${dudoso("distancia_m") ? AMBAR : ""}`}
           inputMode="numeric"
           placeholder="Otra distancia"
           value={e.distancia}
-          onChange={(ev) => cambiar({ distancia: ev.target.value.replace(/\D/g, "") })}
+          onChange={(ev) => {
+            cambiar({ distancia: ev.target.value.replace(/\D/g, "") });
+            marcar("distancia_m");
+          }}
         />
       </div>
 
       <label className="flex flex-col gap-1">
-        <span className={etiqueta}>Tiempo total</span>
+        <span className={etiqueta}>
+          Tiempo total
+          {dudoso("tiempo_ds") && <span className="ml-2 text-sm font-semibold text-amber-700">Revisa</span>}
+        </span>
         <input
-          className={`${campo} ${tiempoInvalido ? "border-red-600 text-red-700" : ""}`}
+          className={`${campo} ${tiempoInvalido ? "border-red-600 text-red-700" : dudoso("tiempo_ds") ? AMBAR : ""}`}
           inputMode="numeric"
           placeholder="0:00.0"
           aria-invalid={tiempoInvalido}
           value={formatearDigitos(e.tiempoDigitos)}
-          onChange={(ev) => cambiar({ tiempoDigitos: digitosDelTexto(ev.target.value) })}
+          onChange={(ev) => {
+            cambiar({ tiempoDigitos: digitosDelTexto(ev.target.value) });
+            marcar("tiempo_ds");
+          }}
           onPaste={(ev) => {
             ev.preventDefault();
             cambiar({ tiempoDigitos: interpretarTiempoPegado(ev.clipboardData.getData("text")) });
+            marcar("tiempo_ds");
           }}
         />
         {tiempoInvalido && <span className="text-base text-red-700">Los segundos deben ser menores que 60.</span>}
       </label>
 
       <div className="flex flex-col gap-2">
-        <span className={etiqueta}>Splits</span>
+        <span className={etiqueta}>
+          Splits
+          {dudoso("splits") && <span className="ml-2 text-sm font-semibold text-amber-700">Revisa</span>}
+        </span>
         <div className="flex flex-wrap gap-2">
           {CANTIDADES.map((n) => (
             <button key={n} type="button" className={chip(e.nSplits === n && !otra)} onClick={() => { setOtra(false); elegirCantidad(n); }}>
@@ -226,7 +290,7 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Pr
                   <span className="text-sm text-zinc-600">Split {i + 1}</span>
                   <input
                     ref={(el) => { refsSplit.current[i] = el; }}
-                    className={`${campo} ${malo ? "border-red-600 text-red-700" : ""}`}
+                    className={`${campo} ${malo ? "border-red-600 text-red-700" : dudoso("splits") ? AMBAR : ""}`}
                     inputMode="numeric"
                     enterKeyHint={i === e.nSplits - 1 ? "done" : "next"}
                     placeholder="0:00.0"
@@ -252,7 +316,7 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Pr
         {resumenSuma && <p className="rounded-lg bg-amber-100 px-3 py-2 text-base text-amber-900">{resumenSuma}</p>}
       </div>
 
-      <details className="rounded-xl border border-zinc-300 p-4">
+      <details className="rounded-xl border border-zinc-300 p-4" open={abrirMasDatos || undefined}>
         <summary className="cursor-pointer text-lg font-medium">Más datos</summary>
         <div className="mt-4 flex flex-col gap-3">
           <span className={etiqueta}>Día</span>
@@ -277,11 +341,11 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Pr
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3">
-          {extra("spm", "SPM", "decimal")}
-          {extra("fcPromedio", "FC promedio")}
+          {extra("spm", "SPM", "decimal", "spm_promedio")}
+          {extra("fcPromedio", "FC promedio", "numeric", "fc_promedio")}
           {extra("fcMaxima", "FC máxima")}
-          {extra("calorias", "Calorías")}
-          {extra("drag", "Drag")}
+          {extra("calorias", "Calorías", "numeric", "calorias")}
+          {extra("drag", "Drag", "numeric", "factor_arrastre")}
           {extra("rpe", "RPE (1–10)")}
         </div>
         <div className="mt-3 flex flex-col gap-3">
@@ -298,8 +362,18 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector }: Pr
           disabled={pendiente || tiempoInvalido}
           className="h-16 w-full rounded-xl bg-zinc-900 text-xl font-semibold text-white disabled:opacity-50"
         >
-          {pendiente ? "Guardando…" : "Guardar"}
+          {pendiente ? "Guardando…" : hayFoto ? "Confirmar y guardar" : "Guardar"}
         </button>
+        {hayFoto && (
+          <button
+            type="button"
+            disabled={pendiente || tiempoInvalido}
+            onClick={() => guardar(true)}
+            className="h-14 w-full rounded-xl bg-zinc-200 text-lg font-semibold text-zinc-900 disabled:opacity-50"
+          >
+            Guardar sin revisar
+          </button>
+        )}
       </div>
     </form>
   );
