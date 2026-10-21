@@ -16,6 +16,7 @@
     "fijar-clave": "tsx scripts/fijar-clave.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.137.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.118.0",
     "next": "16.4.2",
