@@ -12,7 +12,8 @@
     "test:integration": "vitest run --project integration --passWithNoTests",
     "env:local": "node scripts/env-local.mjs",
     "crear-admin": "tsx scripts/crear-admin.ts",
-    "enlace:atleta": "tsx scripts/enlace-atleta.ts"
+    "enlace:atleta": "tsx scripts/enlace-atleta.ts",
+    "fijar-clave": "tsx scripts/fijar-clave.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
