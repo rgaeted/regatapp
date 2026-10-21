@@ -115,7 +115,9 @@ describe("scripts de acceso", () => {
 
     it("rechaza Supabase remoto con sitio localhost y no crea ningún usuario", async () => {
       const antes = await usuarios();
+      // El Supabase de la corrida puede ser local (CI): se fuerza uno remoto en el entorno del script.
       const r = correr("crear-admin", ["--nombre", "Admin Guardia"], {
+        NEXT_PUBLIC_SUPABASE_URL: "https://ejemplo.supabase.co",
         NEXT_PUBLIC_SITE_URL: "http://localhost:3000",
         CONFIRMAR_PRODUCCION: "",
       });
@@ -131,6 +133,7 @@ describe("scripts de acceso", () => {
 
     it("rechaza ambas URL remotas sin la bandera", () => {
       const r = correr("crear-admin", ["--nombre", "X"], {
+        NEXT_PUBLIC_SUPABASE_URL: "https://ejemplo.supabase.co",
         NEXT_PUBLIC_SITE_URL: "https://staging.ejemplo.cl",
         CONFIRMAR_PRODUCCION: "",
       });

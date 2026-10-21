@@ -613,7 +613,7 @@ describe("12. sesion.captura_id solo apunta a capturas propias", () => {
     expect(c!.subida_por).toBe(remeroB.id);
   });
 
-  it("A sí vincula su propia captura y edita la sesión sin cambiarla", async () => {
+  it("A sí vincula su propia captura y edita la sesión sin cambiarla; una foto no sirve para dos sesiones", async () => {
     const vincular = await remeroA.cliente.from("sesion").update({ captura_id: capturaA }).eq("id", sesionA);
     expect(vincular.error).toBeNull();
     const editar = await remeroA.cliente.from("sesion").update({ notas: "ok" }).eq("id", sesionA);
@@ -621,7 +621,8 @@ describe("12. sesion.captura_id solo apunta a capturas propias", () => {
     const nueva = await remeroA.cliente
       .from("sesion")
       .insert({ ...sesionNueva(atletaA, remeroA.id), captura_id: capturaA });
-    expect(nueva.error).toBeNull();
+    // Una foto = una sesión (índice único de la migración 000007): la segunda se rechaza.
+    expect(nueva.error?.code).toBe("23505");
   });
 
   it("subida_por de una captura no se puede cambiar", async () => {
