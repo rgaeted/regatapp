@@ -15,6 +15,13 @@ describe('opcionesInicio', () => {
     expect(hrefs('entrenador')).not.toContain('/entrenadores')
   })
 
+  it('todos los roles tienen Progreso', () => {
+    for (const rol of ['remero', 'entrenador', 'admin'] as const) {
+      expect(opcionesInicio(rol, true).find((o) => o.href === '/progreso')).toMatchObject({ activo: true })
+      expect(opcionesInicio(rol, false).find((o) => o.href === '/progreso')).toMatchObject({ activo: true })
+    }
+  })
+
   it('el admin ve ambos', () => {
     expect(hrefs('admin')).toEqual(expect.arrayContaining(['/atletas', '/entrenadores']))
   })

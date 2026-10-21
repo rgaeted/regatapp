@@ -12,11 +12,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Tema claro fijo: las pantallas usan texto oscuro explícito (se lee junto al ergómetro),
+   así que oscurecer el fondo con el modo oscuro del celular las dejaba ilegibles. */
+:root {
+  color-scheme: light;
 }
 
 body {

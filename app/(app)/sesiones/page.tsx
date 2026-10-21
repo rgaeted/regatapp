@@ -99,6 +99,9 @@ export default async function PaginaSesiones({ searchParams }: PageProps<"/sesio
           ))}
         </ul>
       )}
+      <Link href={esRemero ? "/progreso" : `/progreso?atleta=${atletaId}`} className="font-semibold text-zinc-900 underline">
+        Ver progreso
+      </Link>
       <Link href="/" className="pt-4 text-zinc-700 underline">Volver al inicio</Link>
     </main>
   );

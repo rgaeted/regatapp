@@ -62,6 +62,9 @@ export default async function FichaAtleta({ params, searchParams }: PageProps<"/
       >
         Ver sesiones
       </Link>
+      <Link href={`/progreso?atleta=${atleta.id}`} className="flex h-14 items-center justify-center rounded-xl bg-zinc-200 text-lg font-semibold text-zinc-900">
+        Ver progreso
+      </Link>
 
       {vigente && atleta.activo && <EnlaceAcceso atletaId={atleta.id} nombre={nombre} />}
 

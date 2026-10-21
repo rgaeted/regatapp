@@ -14,6 +14,7 @@ export function opcionesInicio(rol: Rol, ocrDisponible: boolean): OpcionInicio[]
     { texto: 'Foto del ergómetro', href: '/foto', activo: ocrDisponible, principal: ocrDisponible },
     { texto: 'Cargar a mano', href: '/sesion/nueva', activo: true, principal: !ocrDisponible },
     { texto: rol === 'remero' ? 'Mis sesiones' : 'Sesiones', href: '/sesiones', activo: true, principal: false },
+    { texto: rol === 'remero' ? 'Mi progreso' : 'Progreso', href: '/progreso', activo: true, principal: false },
   ]
   if (rol !== 'remero') opciones.push({ texto: 'Atletas', href: '/atletas', activo: true, principal: false })
   if (rol === 'admin') opciones.push({ texto: 'Entrenadores', href: '/entrenadores', activo: true, principal: false })
