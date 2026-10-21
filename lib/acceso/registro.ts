@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { correoStaff, normalizarUsuario, validarClave } from './clave'
+import { correoStaff, normalizarUsuario, validarClave, MENSAJE_CLAVE, MENSAJE_USUARIO } from './clave'
 
 /**
  * Registro abierto: cualquiera puede crear una cuenta con usuario y contraseña,
@@ -27,8 +27,8 @@ export function validarRegistro(entrada: DatosRegistro):
     errores.nombre = 'Escribe tu nombre (2 a 60 letras, sin < ni >).'
   }
   const usuario = normalizarUsuario(entrada.usuario)
-  if (!usuario) errores.usuario = 'El usuario debe tener de 3 a 32 caracteres: letras, números, punto, guion o guion bajo.'
-  if (!validarClave(entrada.clave)) errores.clave = 'La contraseña debe tener al menos 8 caracteres.'
+  if (!usuario) errores.usuario = MENSAJE_USUARIO
+  if (!validarClave(entrada.clave)) errores.clave = MENSAJE_CLAVE
   if (Object.keys(errores).length > 0 || !usuario) return { ok: false, errores }
   return { ok: true, datos: { nombre, usuario, clave: entrada.clave } }
 }

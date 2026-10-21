@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { establecerClaveStaff, validarCredenciales } from '@/lib/acceso/clave'
 import { generarEnlace } from '@/lib/acceso/enlace'
 import { crearUsuarioStaff } from '@/lib/acceso/usuario'
 import { hoySantiago } from '@/lib/schemas/consentimiento'
@@ -8,17 +9,60 @@ import type { Resultado } from './administrar'
 export { diaAnterior }
 
 
+/** Un error cuyo mensaje es seguro y útil de mostrar tal cual a quien administra. */
+export class ErrorUsuario extends Error {}
+
+const USUARIO_REPETIDO = 'Ese usuario ya existe.'
+
+/** Valida usuario y contraseña y traduce los fallos de Auth a mensajes claros. */
+async function fijarAcceso(admin: SupabaseClient, usuarioId: string, usuario: string, clave: string): Promise<string> {
+  const v = validarCredenciales(usuario, clave)
+  if (!v.ok) throw new ErrorUsuario(Object.values(v.errores)[0])
+  try {
+    await establecerClaveStaff(admin, usuarioId, v.usuario, clave)
+  } catch (e) {
+    if (/already|registered|duplicate|exist/i.test(e instanceof Error ? e.message : '')) throw new ErrorUsuario(USUARIO_REPETIDO)
+    throw e
+  }
+  return v.usuario
+}
+
 /**
- * Crea un entrenador y su primer enlace de acceso. Recibe service role y NO
- * autoriza: el llamador verifica que es admin.
+ * Crea un entrenador y su primer enlace de acceso; con `acceso` también le fija
+ * usuario y contraseña (el enlace queda como alternativa). Si algo falla no
+ * deja una cuenta a medias. Recibe service role y NO autoriza: el llamador
+ * verifica que es admin.
  */
 export async function crearEntrenador(
   admin: SupabaseClient,
-  opts: { nombre: string; creadoPor: string; siteUrl: string },
-): Promise<{ usuarioId: string; url: string }> {
+  opts: { nombre: string; creadoPor: string; siteUrl: string; acceso?: { usuario: string; clave: string } },
+): Promise<{ usuarioId: string; url: string; usuario?: string }> {
+  // Se valida ANTES de crear la cuenta: un usuario mal escrito no deja nada.
+  if (opts.acceso) {
+    const v = validarCredenciales(opts.acceso.usuario, opts.acceso.clave)
+    if (!v.ok) throw new ErrorUsuario(Object.values(v.errores)[0])
+  }
   const usuarioId = await crearUsuarioStaff(admin, { nombre: opts.nombre, rol: 'entrenador' })
+  let usuario: string | undefined
+  if (opts.acceso) {
+    try {
+      usuario = await fijarAcceso(admin, usuarioId, opts.acceso.usuario, opts.acceso.clave)
+    } catch (e) {
+      await admin.auth.admin.deleteUser(usuarioId) // sin cuentas huérfanas (borra también su perfil)
+      throw e
+    }
+  }
   const url = await generarEnlace(admin, { usuarioId, creadoPor: opts.creadoPor, siteUrl: opts.siteUrl })
-  return { usuarioId, url }
+  return { usuarioId, url, usuario }
+}
+
+/** Fija o cambia el usuario y la contraseña de un entrenador (o admin). */
+export async function fijarClaveEntrenador(
+  admin: SupabaseClient,
+  usuarioId: string,
+  acceso: { usuario: string; clave: string },
+): Promise<string> {
+  return fijarAcceso(admin, usuarioId, acceso.usuario, acceso.clave)
 }
 
 /**

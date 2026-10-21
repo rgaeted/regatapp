@@ -6,7 +6,7 @@ import { crearClienteServidor } from "@/lib/supabase/server";
 import { cuentasPendientes } from "@/lib/acceso/vincular";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { asignarAtletaAccion, eliminarCuentaPendienteAccion, terminarAsignacionAccion } from "./actions";
-import { EnlaceEntrenador, FormularioEntrenador } from "./formulario";
+import { ClaveEntrenador, EnlaceEntrenador, FormularioEntrenador } from "./formulario";
 
 type Asignacion = { entrenador_id: string; atleta_id: string; hasta: string | null };
 
@@ -16,7 +16,7 @@ export default async function PaginaEntrenadores({ searchParams }: PageProps<"/e
   const supabase = await crearClienteServidor();
 
   const [{ data: entrenadores, error: e1 }, { data: asignaciones, error: e2 }, atletas] = await Promise.all([
-    supabase.from("perfil").select("user_id, nombre").eq("rol", "entrenador").order("nombre"),
+    supabase.from("perfil").select("user_id, nombre, usuario").eq("rol", "entrenador").order("nombre"),
     supabase.from("asignacion_entrenador").select("entrenador_id, atleta_id, hasta"),
     atletasVisibles(supabase),
   ]);
@@ -70,6 +70,7 @@ export default async function PaginaEntrenadores({ searchParams }: PageProps<"/e
                   <button type="submit" className="h-14 rounded-xl bg-zinc-900 px-5 font-semibold text-white">Asignar</button>
                 </form>
               )}
+              <ClaveEntrenador usuarioId={ent.user_id} usuarioActual={ent.usuario ?? null} />
               <EnlaceEntrenador usuarioId={ent.user_id} nombre={ent.nombre} />
             </li>
           );

@@ -27,6 +27,9 @@ export function correoStaff(usuario: string): string {
   return `${usuario}@${DOMINIO_STAFF}`
 }
 
+export const MENSAJE_USUARIO = 'El usuario debe tener de 3 a 32 caracteres: letras, números, punto, guion o guion bajo.'
+export const MENSAJE_CLAVE = 'La contraseña debe tener al menos 8 caracteres.'
+
 /** Largo mínimo; no se recorta ni se normaliza la clave. */
 export function validarClave(clave: string): boolean {
   return clave.length >= LARGO_MINIMO_CLAVE && clave.trim().length > 0
@@ -62,6 +65,18 @@ export async function establecerClaveStaff(
   // El usuario también queda en el perfil (único), para mostrarlo y vincular cuentas.
   const { error: errUsuario } = await admin.from('perfil').update({ usuario: normalizado }).eq('user_id', usuarioId)
   if (errUsuario) throw new Error(`perfil: ${errUsuario.message}`)
+}
+
+/** Valida usuario y contraseña juntos, con mensajes para mostrar (registro, entrenadores). */
+export function validarCredenciales(
+  usuario: string,
+  clave: string,
+): { ok: true; usuario: string } | { ok: false; errores: { usuario?: string; clave?: string } } {
+  const normalizado = normalizarUsuario(usuario)
+  const errores: { usuario?: string; clave?: string } = {}
+  if (!normalizado) errores.usuario = MENSAJE_USUARIO
+  if (!validarClave(clave)) errores.clave = MENSAJE_CLAVE
+  return normalizado && !errores.clave ? { ok: true, usuario: normalizado } : { ok: false, errores }
 }
 
 export type ResultadoClave = { ok: true } | { ok: false; error: string }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { correoStaff, normalizarUsuario, validarClave } from '@/lib/acceso/clave'
+import { correoStaff, normalizarUsuario, validarClave, validarCredenciales } from '@/lib/acceso/clave'
 
 describe('normalizarUsuario', () => {
   it('pasa a minúsculas y recorta', () => {
@@ -31,5 +31,26 @@ describe('validarClave', () => {
   })
   it('no recorta: los espacios cuentan como parte de la clave', () => {
     expect(validarClave(' abcdefg ')).toBe(true)
+  })
+})
+
+describe('validarCredenciales', () => {
+  it('acepta un usuario y una contraseña válidos y devuelve el usuario normalizado', () => {
+    expect(validarCredenciales(' Coach.Ana ', 'una-clave-larga')).toEqual({ ok: true, usuario: 'coach.ana' })
+  })
+  it('explica qué falla en el usuario', () => {
+    const r = validarCredenciales('a b', 'una-clave-larga')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errores.usuario).toContain('3 a 32')
+  })
+  it('explica qué falla en la contraseña', () => {
+    const r = validarCredenciales('coach', 'corta')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errores.clave).toContain('8')
+  })
+  it('informa ambos errores a la vez', () => {
+    const r = validarCredenciales('', '')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(Object.keys(r.errores).sort()).toEqual(['clave', 'usuario'])
   })
 })
