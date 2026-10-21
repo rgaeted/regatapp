@@ -96,6 +96,7 @@ y **Production** al de prod.
 | `SUPABASE_SERVICE_ROLE_KEY` | solo servidor | nunca con prefijo `NEXT_PUBLIC_` |
 | `ANTHROPIC_API_KEY` | solo servidor | desde la fase de OCR |
 | `OCR_MODEL` | solo servidor | valor inicial `claude-sonnet-5-5` |
+| `CRON_SECRET` | solo servidor | cualquier texto largo y aleatorio; sin él el cron diario de retención de fotos (`vercel.json`) responde 401 y las fotos sin confirmar no se borran a los 7 días |
 | `CONCEPT2_CLIENT_ID` | solo servidor | fase 4 |
 | `CONCEPT2_CLIENT_SECRET` | solo servidor | fase 4 |
 | `CONCEPT2_BASE_URL` | solo servidor | `log-dev` o `log` según entorno (fase 4) |

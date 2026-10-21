@@ -12,6 +12,7 @@ const MENSAJES: Record<string, string> = {
   imagen: "No se pudo procesar la foto. Prueba con otra o carga a mano.",
   ilegible: "No se pudo leer la pantalla. Prueba con otra foto o carga a mano.",
   error: "No se pudo leer la foto ahora. Reintenta o carga a mano.",
+  limite: "Llegaste al máximo de fotos de hoy. Carga los datos a mano.",
 };
 
 /** Reduce la foto del celular: sube más rápido y la lectura cuesta menos. */
@@ -46,9 +47,9 @@ export function CamaraOcr({ usuarioId }: { usuarioId: string }) {
     if (!r.ok) throw new Error("ocr");
     const datos = (await r.json()) as RespuestaOcr;
     if (datos.estado === "fallo") {
-      if (datos.motivo === "sin_configurar" || datos.motivo === "imagen") {
+      if (datos.motivo === "sin_configurar" || datos.motivo === "imagen" || datos.motivo === "limite") {
         // No hay nada que reintentar: directo al formulario manual.
-        router.push(datos.capturaId ? `/sesion/nueva?captura=${datos.capturaId}&aviso=${datos.motivo}` : "/sesion/nueva");
+        router.push(datos.capturaId ? `/sesion/nueva?captura=${datos.capturaId}&aviso=${datos.motivo}` : `/sesion/nueva?aviso=${datos.motivo}`);
         return;
       }
       setError(MENSAJES[datos.motivo] ?? MENSAJES.error);
@@ -66,7 +67,11 @@ export function CamaraOcr({ usuarioId }: { usuarioId: string }) {
       const imagen = await reducir(archivo);
       const path = `${usuarioId}/${crypto.randomUUID()}.jpg`;
       setTrabajando("Subiendo…");
-      const { error: errSubida } = await crearClienteNavegador().storage.from("capturas").upload(path, imagen, { contentType: "image/jpeg" });
+      const supabase = crearClienteNavegador();
+      // Primero la fila: así el cron de retención encuentra (y borra) la foto aunque la app se cierre a mitad.
+      const { error: errFila } = await supabase.from("captura").insert({ storage_path: path, subida_por: usuarioId });
+      if (errFila) throw new Error("fila");
+      const { error: errSubida } = await supabase.storage.from("capturas").upload(path, imagen, { contentType: "image/jpeg" });
       if (errSubida) throw new Error("subida");
       ruta.current = path;
       await leer(path);

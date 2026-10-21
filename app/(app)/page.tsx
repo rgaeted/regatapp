@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requerirUsuario } from "@/lib/acceso/actual";
 import { opcionesInicio } from "@/lib/inicio";
+import { ocrDisponible } from "@/lib/ocr/disponible";
 import { cerrarSesion } from "./actions";
 
 const base = "flex h-20 w-full flex-col items-center justify-center rounded-xl text-xl font-semibold";
@@ -12,7 +13,7 @@ export default async function Inicio() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-6 py-10 text-lg">
       <h1 className="text-2xl font-semibold text-zinc-900">Hola, {usuario.nombre}</h1>
-      {opcionesInicio(usuario.rol).map((o) =>
+      {opcionesInicio(usuario.rol, ocrDisponible()).map((o) =>
         o.activo ? (
           <Link
             key={o.href}

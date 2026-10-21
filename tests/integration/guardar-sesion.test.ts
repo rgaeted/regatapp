@@ -146,6 +146,19 @@ describe('guardar_sesion desde una foto', () => {
     expect(await contar('sesion', 'id', input.id)).toBe(0)
   })
 
+  it('una foto produce a lo sumo una sesión', async () => {
+    const { cliente, id: entId, atletaId } = await entrenadorConAtleta()
+    const capturaId = await capturaDe(entId)
+    const foto = { captura_id: capturaId, verificado: true, editado_manual: false }
+    const primera = sesion(atletaId)
+    expect((await guardarSesion(cliente, primera, foto)).ok).toBe(true)
+
+    // Otro envío (id nuevo, p. ej. la página se volvió a abrir) con la misma foto.
+    const segunda = sesion(atletaId)
+    expect(await guardarSesion(cliente, segunda, foto)).toEqual({ ok: false, error: 'Esta foto ya se guardó como una sesión.' })
+    expect(await contar('sesion', 'id', segunda.id)).toBe(0)
+  })
+
   it('sin foto sigue siendo manual y verificada (compatibilidad con la fase 1)', async () => {
     const { cliente, atletaId } = await entrenadorConAtleta()
     const input = sesion(atletaId)

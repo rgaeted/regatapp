@@ -19,8 +19,9 @@ export async function GET(req: Request): Promise<Response> {
     return new Response("No autorizado", { status: 401 });
   }
   try {
-    const borradas = await borrarFotosVencidas(crearClienteAdmin());
-    return Response.json({ borradas });
+    const r = await borrarFotosVencidas(crearClienteAdmin());
+    // Con fallos responde 500 para que Vercel lo muestre; mañana se reintentan.
+    return Response.json(r, { status: r.fallidas > 0 ? 500 : 200 });
   } catch {
     return new Response("Error al borrar fotos", { status: 500 });
   }

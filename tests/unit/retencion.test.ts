@@ -5,7 +5,7 @@ import { borrarFoto, borrarFotosVencidas, fechaLimite } from '@/lib/ocr/retencio
 type Fila = { id: string; storage_path: string; foto_eliminada_en: string | null; subida_en: string }
 
 /** Cliente falso con solo lo que usa retencion.ts. */
-function falso(filas: Fila[], errorStorage = false) {
+function falso(filas: Fila[], errorStorage = false, fallaRuta?: string) {
   const removidos: string[] = []
   const admin = {
     from: () => {
@@ -31,7 +31,7 @@ function falso(filas: Fila[], errorStorage = false) {
     storage: {
       from: () => ({
         remove: async (rutas: string[]) => {
-          if (errorStorage) return { error: { message: 'boom' } }
+          if (errorStorage || (fallaRuta && rutas.includes(fallaRuta))) return { error: { message: 'boom' } }
           removidos.push(...rutas)
           return { error: null }
         },
@@ -87,7 +87,17 @@ describe('borrarFotosVencidas', () => {
       { id: 'ya', storage_path: 'u/ya.jpg', foto_eliminada_en: '2026-10-05T00:00:00Z', subida_en: '2026-10-01T00:00:00Z' },
     ]
     const { admin, removidos } = falso(filas)
-    expect(await borrarFotosVencidas(admin, AHORA)).toBe(1)
+    expect(await borrarFotosVencidas(admin, AHORA)).toEqual({ borradas: 1, fallidas: 0 })
     expect(removidos).toEqual(['u/vieja.jpg'])
+  })
+
+  it('si una foto falla sigue con las demás y cuenta el fallo', async () => {
+    const filas: Fila[] = [
+      { id: 'a', storage_path: 'u/a.jpg', foto_eliminada_en: null, subida_en: '2026-10-01T00:00:00Z' },
+      { id: 'b', storage_path: 'u/b.jpg', foto_eliminada_en: null, subida_en: '2026-10-01T00:00:00Z' },
+    ]
+    const { admin, removidos } = falso(filas, false, 'u/a.jpg')
+    expect(await borrarFotosVencidas(admin, AHORA)).toEqual({ borradas: 1, fallidas: 1 })
+    expect(removidos).toEqual(['u/b.jpg'])
   })
 })

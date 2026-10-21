@@ -31,8 +31,14 @@ export async function borrarFoto(admin: SupabaseClient, capturaId: string, ahora
   if (errMarca) throw new Error(`captura: ${errMarca.message}`)
 }
 
-/** Borra las fotos que llevan más de `DIAS_RETENCION` días sin confirmarse. Devuelve cuántas. */
-export async function borrarFotosVencidas(admin: SupabaseClient, ahora: Date = new Date()): Promise<number> {
+/**
+ * Borra las fotos que llevan más de `DIAS_RETENCION` días sin confirmarse.
+ * Un fallo no frena a las demás: se cuenta y el llamador decide.
+ */
+export async function borrarFotosVencidas(
+  admin: SupabaseClient,
+  ahora: Date = new Date(),
+): Promise<{ borradas: number; fallidas: number }> {
   const { data, error } = await admin
     .from('captura')
     .select('id')
@@ -40,9 +46,14 @@ export async function borrarFotosVencidas(admin: SupabaseClient, ahora: Date = n
     .lt('subida_en', fechaLimite(ahora))
   if (error) throw new Error(`captura: ${error.message}`)
   let borradas = 0
+  let fallidas = 0
   for (const c of data ?? []) {
-    await borrarFoto(admin, c.id as string, ahora)
-    borradas++
+    try {
+      await borrarFoto(admin, c.id as string, ahora)
+      borradas++
+    } catch {
+      fallidas++
+    }
   }
-  return borradas
+  return { borradas, fallidas }
 }

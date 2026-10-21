@@ -6,6 +6,10 @@
 -- persona haya confirmado (true) o guardado sin revisar (false; esas sesiones
 -- quedan fuera de récords y curvas). editado_manual se anota en la captura.
 --
+-- Una foto = una sesión: la RPC lo comprueba (RG001) y el índice único lo garantiza
+-- ante dos envíos simultáneos. El bucket `capturas` pasa a aceptar solo imágenes de
+-- hasta 5 MB (la app reduce la foto a ~300 KB antes de subirla).
+--
 -- Sigue siendo security invoker: RLS y el trigger sesion_proteger_columnas
 -- exigen que la captura sea del propio usuario (subida_por = auth.uid()).
 -- Cambia la firma, así que se reemplaza la función (no hay llamadas intermedias:
@@ -39,6 +43,10 @@ begin
       raise exception 'p_ocr debe ser un objeto con captura_id' using errcode = '22023';
     end if;
     v_captura    := (p_ocr->>'captura_id')::uuid;
+    -- Una foto produce a lo sumo una sesión (si no, se duplicaría un 2k verificado).
+    if exists (select 1 from sesion where captura_id = v_captura) then
+      raise exception 'esta foto ya se guardó como una sesión' using errcode = 'RG001';
+    end if;
     v_verificada := coalesce((p_ocr->>'verificado')::boolean, false);
     v_editado    := coalesce((p_ocr->>'editado_manual')::boolean, false);
   end if;
@@ -103,6 +111,13 @@ begin
   return v_id;
 end;
 $$;
+
+create unique index idx_sesion_captura_unica on sesion (captura_id) where captura_id is not null;
+
+update storage.buckets
+   set file_size_limit = 5242880,
+       allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp']
+ where id = 'capturas';
 
 revoke execute on function guardar_sesion(jsonb, jsonb, jsonb) from public, anon;
 grant  execute on function guardar_sesion(jsonb, jsonb, jsonb) to authenticated;

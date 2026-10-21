@@ -36,13 +36,24 @@ export default async function PaginaSesionNueva({ searchParams }: PageProps<"/se
   // Sesión desde una foto (fase 2): la captura la filtra RLS (solo la propia).
   let capturaId: string | null = null;
   let lectura: LecturaOcr | null = null;
+  let aviso = typeof sp.aviso === "string" ? sp.aviso : undefined;
   const pedida = z.uuid().safeParse(typeof sp.captura === "string" ? sp.captura : "");
   if (pedida.success) {
-    const { data } = await supabase.from("captura").select("id, respuesta_cruda").eq("id", pedida.data).maybeSingle();
+    const { data } = await supabase
+      .from("captura")
+      .select("id, respuesta_cruda, foto_eliminada_en")
+      .eq("id", pedida.data)
+      .maybeSingle();
     if (data) {
-      capturaId = data.id as string;
-      const cruda = lecturaModeloSchema.safeParse(data.respuesta_cruda);
-      if (cruda.success) lectura = normalizarLectura(cruda.data);
+      // Una foto = una sesión: si ya se guardó (o ya se borró), no se vuelve a ofrecer.
+      const { data: usada } = await supabase.from("sesion").select("id").eq("captura_id", data.id).limit(1);
+      if ((usada?.length ?? 0) > 0 || data.foto_eliminada_en) {
+        aviso = "usada";
+      } else {
+        capturaId = data.id as string;
+        const cruda = lecturaModeloSchema.safeParse(data.respuesta_cruda);
+        if (cruda.success) lectura = normalizarLectura(cruda.data);
+      }
     }
   }
 
@@ -56,7 +67,7 @@ export default async function PaginaSesionNueva({ searchParams }: PageProps<"/se
       mostrarSelector={usuario.rol !== "remero"}
       capturaId={capturaId}
       lectura={lectura}
-      aviso={typeof sp.aviso === "string" ? sp.aviso : undefined}
+      aviso={aviso}
     />
   );
 }

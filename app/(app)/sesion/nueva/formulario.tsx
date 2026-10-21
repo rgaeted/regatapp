@@ -37,6 +37,8 @@ const etiqueta = "text-base font-medium text-zinc-700";
 
 const AVISOS: Record<string, string> = {
   vacia: "No pudimos leer la pantalla en la foto. Completa los datos a mano.",
+  limite: "Llegaste al máximo de fotos de hoy. Carga los datos a mano.",
+  usada: "Esa foto ya se guardó como una sesión. Si es otra, saca una foto nueva.",
   sin_configurar: "La lectura automática todavía no está activada. Completa los datos a mano.",
   imagen: "No se pudo procesar la foto. Completa los datos a mano.",
 };
@@ -171,12 +173,15 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector, capt
     >
       <h1 className="text-2xl font-semibold text-zinc-900">Nueva sesión</h1>
 
-      {hayFoto && lectura && (
+      {hayFoto && lectura && aviso !== "vacia" && (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-base text-amber-900">
           Leído de la foto. Revisa los campos marcados en ámbar y confirma.
         </p>
       )}
-      {hayFoto && !lectura && (
+      {(!hayFoto || !lectura || aviso === "vacia") && aviso && AVISOS[aviso] && !hayFoto && (
+        <p className="rounded-lg bg-zinc-100 px-3 py-2 text-base text-zinc-700">{AVISOS[aviso]}</p>
+      )}
+      {hayFoto && (!lectura || aviso === "vacia") && (
         <p className="rounded-lg bg-zinc-100 px-3 py-2 text-base text-zinc-700">
           {(aviso && AVISOS[aviso]) || "No hay datos leídos de la foto. Completa los datos a mano."}
         </p>

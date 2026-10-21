@@ -9,6 +9,7 @@ export type ResultadoGuardar = { ok: true; id: string } | { ok: false; error: st
 const SIN_PERMISO =
   'No se puede guardar: el atleta no tiene consentimiento vigente o está inactivo.'
 const CONFLICTO = 'Esta sesión ya se guardó con otros datos. Recarga la página e inténtalo de nuevo.'
+const FOTO_USADA = 'Esta foto ya se guardó como una sesión.'
 const GENERICO = 'No se pudo guardar la sesión. Intenta de nuevo.'
 
 /**
@@ -24,9 +25,11 @@ export async function guardarSesion(
   const valido = sesionInputSchema.safeParse(input)
   if (!valido.success) return { ok: false, error: 'Revisa los datos de la sesión.' }
   const { splits, ...sesion } = valido.data
-  const { data, error } = await supabase.rpc('guardar_sesion', { p_sesion: sesion, p_splits: splits, p_ocr: foto ?? null })
+  const { data, error } = await supabase.rpc('guardar_sesion', foto ? { p_sesion: sesion, p_splits: splits, p_ocr: foto } : { p_sesion: sesion, p_splits: splits })
   if (error) {
     // 42501 = insufficient_privilege: RLS (consentimiento, atleta inactivo o ajeno).
+    // RG001: la captura ya tiene una sesión (ver la migración 000007).
+    if (error.code === 'RG001') return { ok: false, error: FOTO_USADA }
     // 23505: el id ya existe con otros datos (ver la migración 000006).
     if (error.code === '23505') return { ok: false, error: CONFLICTO }
     return { ok: false, error: error.code === '42501' ? SIN_PERMISO : GENERICO }
