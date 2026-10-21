@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, describe, expect, it } from 'vitest'
 import { correoStaff, ERROR_CREDENCIALES, establecerClaveStaff, iniciarConClave } from '@/lib/acceso/clave'
-import { admin, clienteAnonimo, crearAtleta, crearUsuario, limpiar } from './helpers'
+import { admin, clienteAnonimo, crearAtleta, crearUsuario, limpiar, registrarUsuario } from './helpers'
 
 afterAll(limpiar)
 
@@ -39,16 +39,30 @@ describe('establecerClaveStaff / iniciarConClave', () => {
     await expect(establecerClaveStaff(admin(), remero.id, unico(), CLAVE)).rejects.toThrow('Solo entrenadores y admins')
   })
 
-  it('aunque una cuenta de remero tuviera correo y clave de staff, no entra', async () => {
+  it('un remero vinculado a un atleta con consentimiento entra con su contraseña', async () => {
     const atletaId = await crearAtleta()
     const remero = await crearUsuario({ rol: 'remero', atletaId })
     const usuario = unico()
-    // Se fuerza por la API de admin, saltándose establecerClaveStaff.
     await admin().auth.admin.updateUserById(remero.id, { email: correoStaff(usuario), password: CLAVE })
+    expect(await iniciarConClave(clienteAnonimo(), admin(), usuario, CLAVE)).toEqual({ ok: true })
+  })
+
+  it('un remero cuyo consentimiento fue revocado NO entra y no queda con sesión', async () => {
+    const atletaId = await crearAtleta()
+    const remero = await crearUsuario({ rol: 'remero', atletaId })
+    const usuario = unico()
+    await admin().auth.admin.updateUserById(remero.id, { email: correoStaff(usuario), password: CLAVE })
+    await admin().from('consentimiento').update({ revocado_en: new Date().toISOString() }).eq('atleta_id', atletaId)
     const cliente = clienteAnonimo()
     expect(await iniciarConClave(cliente, admin(), usuario, CLAVE)).toEqual({ ok: false, error: ERROR_CREDENCIALES })
-    const { data } = await cliente.auth.getSession()
-    expect(data.session).toBeNull()
+    expect((await cliente.auth.getSession()).data.session).toBeNull()
+  })
+
+  it('una cuenta sin perfil no entra', async () => {
+    const usuario = unico()
+    const { data } = await admin().auth.admin.createUser({ email: correoStaff(usuario), password: CLAVE, email_confirm: true })
+    registrarUsuario(data.user!.id)
+    expect(await iniciarConClave(clienteAnonimo(), admin(), usuario, CLAVE)).toEqual({ ok: false, error: ERROR_CREDENCIALES })
   })
 
   it('dos cuentas no pueden compartir el mismo usuario', async () => {

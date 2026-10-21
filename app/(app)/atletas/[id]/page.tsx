@@ -4,7 +4,16 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { requerirStaff } from "@/lib/acceso/staff";
 import { crearClienteServidor } from "@/lib/supabase/server";
-import { cambiarActivoAccion, editarAtletaAccion, eliminarAtletaAccion, revocarConsentimientoAccion } from "./actions";
+import { cuentasPendientes } from "@/lib/acceso/vincular";
+import { crearClienteAdmin } from "@/lib/supabase/admin";
+import {
+  cambiarActivoAccion,
+  desvincularCuentaAccion,
+  editarAtletaAccion,
+  eliminarAtletaAccion,
+  revocarConsentimientoAccion,
+  vincularCuentaAccion,
+} from "./actions";
 import { EnlaceAcceso } from "./enlace-acceso";
 
 const campo = "h-14 w-full rounded-xl border border-zinc-300 bg-white px-4 text-lg";
@@ -34,6 +43,11 @@ export default async function FichaAtleta({ params, searchParams }: PageProps<"/
 
   // Un tercero que abre la ficha de un atleta queda registrado (diseño §5.2).
   await supabase.rpc("registrar_acceso", { p_atleta_id: id.data, p_accion: "ver_ficha", p_detalle: null });
+
+  // Cuenta con la que entra este atleta (RLS: el entrenador ve la de sus atletas) y cuentas que esperan una ficha.
+  const { data: cuentas } = await supabase.from("perfil").select("nombre, usuario").eq("atleta_id", id.data).limit(1);
+  const cuenta = cuentas?.[0];
+  const pendientes = cuenta ? [] : await cuentasPendientes(crearClienteAdmin());
 
   const nombre = `${atleta.nombre} ${atleta.apellido}`;
   return (
@@ -69,6 +83,42 @@ export default async function FichaAtleta({ params, searchParams }: PageProps<"/
       <Link href={`/progreso?atleta=${atleta.id}`} className="flex h-14 items-center justify-center rounded-xl bg-zinc-200 text-lg font-semibold text-zinc-900">
         Ver progreso
       </Link>
+
+      <section className="flex flex-col gap-3 rounded-xl border border-zinc-300 p-4">
+        <h2 className="text-lg font-semibold">Cuenta de acceso</h2>
+        {cuenta ? (
+          <>
+            <p className="text-base">
+              Entra como <strong>{cuenta.usuario ?? "enlace de acceso"}</strong>
+              {cuenta.usuario ? "" : " (sin contraseña)"}.
+            </p>
+            <form action={desvincularCuentaAccion}>
+              <input type="hidden" name="id" value={atleta.id} />
+              <button type="submit" className={botonSecundario}>Desvincular cuenta</button>
+            </form>
+          </>
+        ) : pendientes.length > 0 ? (
+          <form action={vincularCuentaAccion} className="flex flex-col gap-3">
+            <input type="hidden" name="id" value={atleta.id} />
+            <p className="text-base text-zinc-700">Cuentas que se registraron y esperan una ficha:</p>
+            <select name="cuenta" className={campo} defaultValue={pendientes[0].usuarioId}>
+              {pendientes.map((c) => (
+                <option key={c.usuarioId} value={c.usuarioId}>
+                  {c.nombre}
+                  {c.usuario ? ` (${c.usuario})` : ""}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className="h-14 w-full rounded-xl bg-zinc-900 text-lg font-semibold text-white">
+              Vincular a {atleta.nombre}
+            </button>
+          </form>
+        ) : (
+          <p className="text-base text-zinc-700">
+            Todavía no hay cuentas pendientes. Pídele que cree su cuenta en la pantalla de entrada y vuelve aquí.
+          </p>
+        )}
+      </section>
 
       {vigente && atleta.activo && <EnlaceAcceso atletaId={atleta.id} nombre={nombre} />}
 

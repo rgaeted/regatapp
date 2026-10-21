@@ -3,7 +3,9 @@ import { requerirAdmin } from "@/lib/acceso/staff";
 import { atletasVisibles } from "@/lib/atletas/lista";
 import { hoySantiago } from "@/lib/schemas/consentimiento";
 import { crearClienteServidor } from "@/lib/supabase/server";
-import { asignarAtletaAccion, terminarAsignacionAccion } from "./actions";
+import { cuentasPendientes } from "@/lib/acceso/vincular";
+import { crearClienteAdmin } from "@/lib/supabase/admin";
+import { asignarAtletaAccion, eliminarCuentaPendienteAccion, terminarAsignacionAccion } from "./actions";
 import { EnlaceEntrenador, FormularioEntrenador } from "./formulario";
 
 type Asignacion = { entrenador_id: string; atleta_id: string; hasta: string | null };
@@ -21,6 +23,7 @@ export default async function PaginaEntrenadores({ searchParams }: PageProps<"/e
   if (e1) throw new Error(`entrenadores: ${e1.message}`);
   if (e2) throw new Error(`asignaciones: ${e2.message}`);
 
+  const pendientes = await cuentasPendientes(crearClienteAdmin());
   const hoy = hoySantiago();
   const vigentes = ((asignaciones ?? []) as Asignacion[]).filter((a) => a.hasta === null || a.hasta >= hoy);
   const nombreAtleta = new Map(atletas.map((a) => [a.id, `${a.apellido}, ${a.nombre}`]));
@@ -72,6 +75,26 @@ export default async function PaginaEntrenadores({ searchParams }: PageProps<"/e
           );
         })}
       </ul>
+      <section className="flex flex-col gap-3">
+        <h2 className="border-b-2 border-mar-500 pb-1 text-xl font-semibold">Cuentas pendientes</h2>
+        {pendientes.length === 0 ? (
+          <p className="text-base text-zinc-600">Nadie espera una ficha. Quienes se registran aparecen aquí hasta que un entrenador las vincula.</p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-zinc-200">
+            {pendientes.map((c) => (
+              <li key={c.usuarioId} className="flex items-center justify-between gap-3 py-3">
+                <span className="text-base">
+                  {c.nombre} <span className="text-zinc-600">{c.usuario ? `(${c.usuario})` : ""}</span>
+                </span>
+                <form action={eliminarCuentaPendienteAccion}>
+                  <input type="hidden" name="cuenta" value={c.usuarioId} />
+                  <button type="submit" className="h-11 rounded-lg bg-zinc-200 px-4 text-base font-medium">Borrar</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <Link href="/" className="pt-2 text-zinc-700 underline">Volver al inicio</Link>
     </main>
   );

@@ -1,7 +1,7 @@
 import "server-only";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { perfilConAcceso } from "@/lib/acceso/enlace";
+import { estadoCuenta } from "@/lib/acceso/cuenta";
 import { esErrorTransitorio } from "@/lib/acceso/errores-auth";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { crearClienteServidor } from "@/lib/supabase/server";
@@ -16,6 +16,8 @@ export type UsuarioActual = {
 export type EstadoAcceso =
   | { estado: "sin_sesion" }
   | { estado: "sin_acceso" }
+  // Se registró sola y aún no está vinculada a un atleta: no ve datos, pero no se le cierra la sesión.
+  | { estado: "pendiente"; nombre: string; usuario: string | null }
   | { estado: "ok"; usuario: UsuarioActual };
 
 /**
@@ -43,8 +45,10 @@ export const obtenerAcceso = cache(async (): Promise<EstadoAcceso> => {
   }
   if (!data.user) return { estado: "sin_sesion" };
 
-  const perfil = await perfilConAcceso(crearClienteAdmin(), data.user.id);
-  if (!perfil) return { estado: "sin_acceso" };
+  const cuenta = await estadoCuenta(crearClienteAdmin(), data.user.id);
+  if (cuenta.estado === "sin_acceso") return { estado: "sin_acceso" };
+  if (cuenta.estado === "pendiente") return { estado: "pendiente", nombre: cuenta.nombre, usuario: cuenta.usuario };
+  const perfil = cuenta.perfil;
   return {
     estado: "ok",
     usuario: { id: data.user.id, nombre: perfil.nombre, rol: perfil.rol, atletaId: perfil.atleta_id },
@@ -53,7 +57,8 @@ export const obtenerAcceso = cache(async (): Promise<EstadoAcceso> => {
 
 /**
  * Puerta de acceso de la zona autenticada.
- * - sin sesión: a /sin-acceso, sin tocar cookies.
+ * - sin sesión: a /login (donde también se crea una cuenta), sin tocar cookies.
+ * - cuenta pendiente (registrada, sin atleta): a /pendiente, sin cerrar la sesión.
  * - sin acceso: cierra la sesión (en todos los dispositivos: el acceso fue
  *   retirado) y a /sin-acceso.
  * - error transitorio: lanza (página de error con reintento), sin cerrar nada.
@@ -65,9 +70,11 @@ export const obtenerAcceso = cache(async (): Promise<EstadoAcceso> => {
 export async function requerirUsuario(): Promise<UsuarioActual> {
   const acceso = await obtenerAcceso();
   if (acceso.estado === "ok") return acceso.usuario;
+  if (acceso.estado === "pendiente") redirect("/pendiente");
   if (acceso.estado === "sin_acceso") {
     const supabase = await crearClienteServidor();
     await supabase.auth.signOut();
+    redirect("/sin-acceso");
   }
-  redirect("/sin-acceso");
+  redirect("/login");
 }

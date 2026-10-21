@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const m = vi.hoisted(() => ({
   getUser: vi.fn(),
   signOut: vi.fn(),
-  perfilConAcceso: vi.fn(),
+  estadoCuenta: vi.fn(),
   redirect: vi.fn((url: string): never => {
     throw new Error(`NEXT_REDIRECT ${url}`);
   }),
@@ -23,7 +23,7 @@ vi.mock("@/lib/supabase/server", () => ({
   crearClienteServidor: async () => ({ auth: { getUser: m.getUser, signOut: m.signOut } }),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ crearClienteAdmin: () => ({}) }));
-vi.mock("@/lib/acceso/enlace", () => ({ perfilConAcceso: m.perfilConAcceso }));
+vi.mock("@/lib/acceso/cuenta", () => ({ estadoCuenta: m.estadoCuenta }));
 
 const { obtenerAcceso, requerirUsuario } = await import("@/lib/acceso/actual");
 
@@ -39,7 +39,7 @@ describe("obtenerAcceso: tri-estado", () => {
   it("sin cookie de sesión → sin_sesion", async () => {
     m.getUser.mockResolvedValue(sinUsuario(new AuthSessionMissingError()));
     expect(await obtenerAcceso()).toEqual({ estado: "sin_sesion" });
-    expect(m.perfilConAcceso).not.toHaveBeenCalled();
+    expect(m.estadoCuenta).not.toHaveBeenCalled();
   });
 
   it("JWT inválido o usuario borrado (401/403 de GoTrue) → sin_sesion", async () => {
@@ -51,14 +51,20 @@ describe("obtenerAcceso: tri-estado", () => {
 
   it("usuario válido sin acceso vigente → sin_acceso", async () => {
     m.getUser.mockResolvedValue({ data: { user: USUARIO }, error: null });
-    m.perfilConAcceso.mockResolvedValue(null);
+    m.estadoCuenta.mockResolvedValue({ estado: "sin_acceso" });
     expect(await obtenerAcceso()).toEqual({ estado: "sin_acceso" });
-    expect(m.perfilConAcceso).toHaveBeenCalledWith(expect.anything(), "u-1");
+    expect(m.estadoCuenta).toHaveBeenCalledWith(expect.anything(), "u-1");
+  });
+
+  it("cuenta registrada y aún sin atleta → pendiente (no es sin_acceso)", async () => {
+    m.getUser.mockResolvedValue({ data: { user: USUARIO }, error: null });
+    m.estadoCuenta.mockResolvedValue({ estado: "pendiente", nombre: "Ana", usuario: "ana" });
+    expect(await obtenerAcceso()).toEqual({ estado: "pendiente", nombre: "Ana", usuario: "ana" });
   });
 
   it("usuario con acceso → ok con UsuarioActual", async () => {
     m.getUser.mockResolvedValue({ data: { user: USUARIO }, error: null });
-    m.perfilConAcceso.mockResolvedValue({ rol: "remero", nombre: "Ana Pérez", atleta_id: "a-1" });
+    m.estadoCuenta.mockResolvedValue({ estado: "ok", perfil: { rol: "remero", nombre: "Ana Pérez", atleta_id: "a-1" } });
     expect(await obtenerAcceso()).toEqual({
       estado: "ok",
       usuario: { id: "u-1", nombre: "Ana Pérez", rol: "remero", atletaId: "a-1" },
@@ -78,7 +84,7 @@ describe("errores transitorios: lanzan, nunca son 'sin sesión'", () => {
   it.each(transitorios)("%s: obtenerAcceso lanza", async (_, error) => {
     m.getUser.mockResolvedValue(sinUsuario(error));
     await expect(obtenerAcceso()).rejects.toThrow(/verificar la sesión/);
-    expect(m.perfilConAcceso).not.toHaveBeenCalled();
+    expect(m.estadoCuenta).not.toHaveBeenCalled();
   });
 
   it.each(transitorios)("%s: requerirUsuario lanza SIN signOut ni redirect", async (_, error) => {
@@ -90,7 +96,7 @@ describe("errores transitorios: lanzan, nunca son 'sin sesión'", () => {
 
   it("si falla la lectura del perfil, lanza SIN signOut ni redirect", async () => {
     m.getUser.mockResolvedValue({ data: { user: USUARIO }, error: null });
-    m.perfilConAcceso.mockRejectedValue(new Error("perfil: timeout"));
+    m.estadoCuenta.mockRejectedValue(new Error("perfil: timeout"));
     await expect(requerirUsuario()).rejects.toThrow(/perfil: timeout/);
     expect(m.signOut).not.toHaveBeenCalled();
     expect(m.redirect).not.toHaveBeenCalled();
@@ -98,23 +104,30 @@ describe("errores transitorios: lanzan, nunca son 'sin sesión'", () => {
 });
 
 describe("requerirUsuario", () => {
-  it("sin_sesion → /sin-acceso sin signOut", async () => {
+  it("sin_sesion → /login sin signOut", async () => {
     m.getUser.mockResolvedValue(sinUsuario(new AuthSessionMissingError()));
-    await expect(requerirUsuario()).rejects.toThrow("NEXT_REDIRECT /sin-acceso");
+    await expect(requerirUsuario()).rejects.toThrow("NEXT_REDIRECT /login");
     expect(m.signOut).not.toHaveBeenCalled();
   });
 
   it("sin_acceso → signOut y /sin-acceso, con un solo getUser", async () => {
     m.getUser.mockResolvedValue({ data: { user: USUARIO }, error: null });
-    m.perfilConAcceso.mockResolvedValue(null);
+    m.estadoCuenta.mockResolvedValue({ estado: "sin_acceso" });
     await expect(requerirUsuario()).rejects.toThrow("NEXT_REDIRECT /sin-acceso");
     expect(m.signOut).toHaveBeenCalledTimes(1);
     expect(m.getUser).toHaveBeenCalledTimes(1);
   });
 
+  it("pendiente → /pendiente SIN cerrar la sesión", async () => {
+    m.getUser.mockResolvedValue({ data: { user: USUARIO }, error: null });
+    m.estadoCuenta.mockResolvedValue({ estado: "pendiente", nombre: "Ana", usuario: "ana" });
+    await expect(requerirUsuario()).rejects.toThrow("NEXT_REDIRECT /pendiente");
+    expect(m.signOut).not.toHaveBeenCalled();
+  });
+
   it("ok → devuelve el usuario sin signOut ni redirect", async () => {
     m.getUser.mockResolvedValue({ data: { user: USUARIO }, error: null });
-    m.perfilConAcceso.mockResolvedValue({ rol: "entrenador", nombre: "Coach", atleta_id: null });
+    m.estadoCuenta.mockResolvedValue({ estado: "ok", perfil: { rol: "entrenador", nombre: "Coach", atleta_id: null } });
     expect(await requerirUsuario()).toEqual({ id: "u-1", nombre: "Coach", rol: "entrenador", atletaId: null });
     expect(m.signOut).not.toHaveBeenCalled();
     expect(m.redirect).not.toHaveBeenCalled();

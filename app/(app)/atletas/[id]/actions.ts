@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requerirAdmin, requerirStaff } from "@/lib/acceso/staff";
 import { cambiarActivo, generarEnlaceParaAtleta, revocarConsentimiento } from "@/lib/atletas/administrar";
+import { desvincularCuenta, vincularCuenta } from "@/lib/acceso/vincular";
 import { eliminarAtleta } from "@/lib/atletas/eliminar";
 import { formDataAAtleta, mensajeAlta } from "@/lib/atletas/formulario";
 import { envPublico } from "@/lib/env";
@@ -81,6 +82,28 @@ export async function eliminarAtletaAccion(fd: FormData): Promise<void> {
     volver(id, "No se pudo eliminar todo. Intenta de nuevo; el proceso se puede repetir.");
   }
   redirect("/atletas");
+}
+
+export async function vincularCuentaAccion(fd: FormData): Promise<void> {
+  await requerirStaff();
+  const id = idDe(fd);
+  const cuenta = z.uuid().safeParse(fd.get("cuenta"));
+  if (!cuenta.success) volver(id, "Elige una cuenta.");
+  const supabase = await crearClienteServidor();
+  const r = await vincularCuenta(supabase, crearClienteAdmin(), id, cuenta.data);
+  if (r.ok) {
+    await supabase.rpc("registrar_acceso", { p_atleta_id: id, p_accion: "vincular_cuenta", p_detalle: { cuenta: cuenta.data } });
+  }
+  volver(id, r.ok ? undefined : r.error);
+}
+
+export async function desvincularCuentaAccion(fd: FormData): Promise<void> {
+  await requerirStaff();
+  const id = idDe(fd);
+  const supabase = await crearClienteServidor();
+  const r = await desvincularCuenta(supabase, crearClienteAdmin(), id);
+  if (r.ok) await supabase.rpc("registrar_acceso", { p_atleta_id: id, p_accion: "desvincular_cuenta", p_detalle: null });
+  volver(id, r.ok ? undefined : r.error);
 }
 
 export async function generarEnlaceAccion(atletaId: string): Promise<{ url: string } | { error: string }> {

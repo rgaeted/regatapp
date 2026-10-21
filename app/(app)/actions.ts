@@ -7,5 +7,5 @@ export async function cerrarSesion(): Promise<void> {
   const supabase = await crearClienteServidor();
   // Solo este dispositivo: el remero puede tener la app abierta en otro.
   await supabase.auth.signOut({ scope: "local" });
-  redirect("/sin-acceso");
+  redirect("/login");
 }

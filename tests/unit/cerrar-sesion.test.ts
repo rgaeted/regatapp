@@ -16,8 +16,8 @@ vi.mock("@/lib/supabase/server", () => ({
 const { cerrarSesion } = await import("@/app/(app)/actions");
 
 describe("cerrarSesion", () => {
-  it("hace signOut con scope local y va a /sin-acceso", async () => {
-    await expect(cerrarSesion()).rejects.toThrow("NEXT_REDIRECT /sin-acceso");
+  it("hace signOut con scope local y va a /login", async () => {
+    await expect(cerrarSesion()).rejects.toThrow("NEXT_REDIRECT /login");
     expect(m.signOut).toHaveBeenCalledTimes(1);
     expect(m.signOut).toHaveBeenCalledWith({ scope: "local" });
   });

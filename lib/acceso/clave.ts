@@ -1,11 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { esErrorTransitorio } from './errores-auth'
-import { perfilConAcceso } from './enlace'
+import { estadoCuenta } from './cuenta'
 
 /**
- * Entrada con usuario y contraseña, solo para entrenadores y admins. Los
- * remeros (incluidos los menores) siguen entrando por enlace: sus cuentas no
- * tienen contraseña y el dominio del correo derivado no coincide con el suyo.
+ * Entrada con usuario y contraseña. Sirve para todos los roles: staff, remeros
+ * vinculados a un atleta y cuentas recién registradas (pendientes). Los remeros
+ * que entran por enlace de un solo uso no tienen contraseña y siguen igual.
  * Sin `server-only` para que lo reutilicen scripts y vitest.
  */
 
@@ -22,7 +22,7 @@ export function normalizarUsuario(texto: string): string | null {
   return USUARIO_VALIDO.test(u) ? u : null
 }
 
-/** Correo sintético con que el usuario existe en Auth (nadie lo lee). */
+/** Correo sintético con que una cuenta con contraseña existe en Auth (nadie lo lee). */
 export function correoStaff(usuario: string): string {
   return `${usuario}@${DOMINIO_STAFF}`
 }
@@ -59,15 +59,19 @@ export async function establecerClaveStaff(
     email_confirm: true,
   })
   if (error) throw new Error(`No se pudo fijar la contraseña: ${error.message}`)
+  // El usuario también queda en el perfil (único), para mostrarlo y vincular cuentas.
+  const { error: errUsuario } = await admin.from('perfil').update({ usuario: normalizado }).eq('user_id', usuarioId)
+  if (errUsuario) throw new Error(`perfil: ${errUsuario.message}`)
 }
 
 export type ResultadoClave = { ok: true } | { ok: false; error: string }
 
 /**
- * Inicia sesión (cookies de sesión en `auth`) si el usuario es staff con acceso
- * vigente. Cualquier fallo de credenciales da el mismo mensaje, para no revelar
- * si el usuario existe. Un remero que adivine un usuario no entra: se rechaza
- * y se cierra la sesión que acaba de abrirse.
+ * Inicia sesión (cookies de sesión en `auth`). Entra quien tiene acceso vigente o
+ * una cuenta pendiente (que solo verá la pantalla de espera). Cualquier fallo de
+ * credenciales da el mismo mensaje, para no revelar si el usuario existe. Una
+ * cuenta sin perfil, o con acceso retirado (atleta inactivo o consentimiento
+ * revocado), se rechaza y se cierra la sesión recién abierta.
  */
 export async function iniciarConClave(
   auth: SupabaseClient,
@@ -83,8 +87,8 @@ export async function iniciarConClave(
     return { ok: false, error: esErrorTransitorio(error) ? ERROR_TRANSITORIO : ERROR_CREDENCIALES }
   }
 
-  const perfil = await perfilConAcceso(admin, data.user.id)
-  if (!perfil || perfil.rol === 'remero') {
+  const cuenta = await estadoCuenta(admin, data.user.id)
+  if (cuenta.estado === 'sin_acceso') {
     await auth.auth.signOut({ scope: 'local' })
     return { ok: false, error: ERROR_CREDENCIALES }
   }

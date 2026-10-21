@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requerirAdmin } from "@/lib/acceso/staff";
 import { generarEnlace } from "@/lib/acceso/enlace";
+import { eliminarCuentaPendiente } from "@/lib/acceso/vincular";
 import { asignarAtleta, crearEntrenador, terminarAsignacion } from "@/lib/atletas/entrenadores";
 import { envPublico } from "@/lib/env";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
@@ -56,6 +57,14 @@ export async function asignarAtletaAccion(fd: FormData): Promise<void> {
   if (!par.success) volver("Elige un atleta.");
   const supabase = await crearClienteServidor();
   const r = await asignarAtleta(supabase, crearClienteAdmin(), par.data.entrenador, par.data.atleta);
+  volver(r.ok ? undefined : r.error);
+}
+
+export async function eliminarCuentaPendienteAccion(fd: FormData): Promise<void> {
+  await requerirAdmin();
+  const id = z.uuid().safeParse(fd.get("cuenta"));
+  if (!id.success) volver();
+  const r = await eliminarCuentaPendiente(crearClienteAdmin(), id.data);
   volver(r.ok ? undefined : r.error);
 }
 
