@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type KeyboardEvent, type PointerEvent } from "react";
+import { MARCA } from "@/lib/marca";
 import { fechaCorta, fechaLarga } from "@/lib/progreso/formato";
 import { ticksBonitos, type PuntoSplit } from "@/lib/progreso/calculos";
 import { formatTiempo } from "@/lib/tiempo";
@@ -64,11 +65,12 @@ export function CurvaSplit({ puntos, titulo }: { puntos: PuntoSplit[]; titulo: s
       className="flex flex-col gap-2"
       style={
         {
-          "--viz-linea": "#2a78d6",
-          "--viz-superficie": "#ffffff",
-          "--viz-rejilla": "#e4e4e7",
-          "--viz-texto": "#3f3f46",
-          "--viz-texto-suave": "#71717a",
+          "--viz-linea": MARCA.turquesaOscuro,
+          "--viz-record": MARCA.pala,
+          "--viz-superficie": MARCA.papel,
+          "--viz-rejilla": "#d3e0e4",
+          "--viz-texto": MARCA.marino,
+          "--viz-texto-suave": "#476572",
         } as React.CSSProperties
       }
     >
@@ -104,8 +106,8 @@ export function CurvaSplit({ puntos, titulo }: { puntos: PuntoSplit[]; titulo: s
             key={p.id}
             cx={x(p.fecha)}
             cy={y(p.split500_ds)}
-            r={p.esRecord ? 5.5 : 4}
-            fill="var(--viz-linea)"
+            r={i === mejor ? 6.5 : p.esRecord ? 5.5 : 4}
+            fill={i === mejor ? "var(--viz-record)" : "var(--viz-linea)"}
             stroke="var(--viz-superficie)"
             strokeWidth={2}
           >
@@ -119,12 +121,16 @@ export function CurvaSplit({ puntos, titulo }: { puntos: PuntoSplit[]; titulo: s
       <p aria-live="polite" className="text-base text-zinc-800">
         <strong>{formatTiempo(actual.split500_ds)}</strong> /500 m · {formatTiempo(actual.tiempo_ds)} en total ·{" "}
         {fechaLarga(actual.fecha)}
-        {actual.esRecord && <span className="ml-2 rounded bg-blue-100 px-2 py-0.5 text-sm font-semibold text-blue-900">Mejor marca del momento</span>}
+        {sel === mejor ? (
+          <span className="ml-2 inline-block whitespace-nowrap rounded bg-pala-100 px-2 py-0.5 text-sm font-semibold text-pala-600">Récord personal</span>
+        ) : (
+          actual.esRecord && <span className="ml-2 inline-block whitespace-nowrap rounded bg-zinc-100 px-2 py-0.5 text-sm font-semibold text-zinc-800">Mejor marca del momento</span>
+        )}
       </p>
-      <p className="text-sm text-zinc-600">Más arriba es más rápido. Toca el gráfico para ver cada sesión.</p>
+      <p className="text-sm text-zinc-600">Más arriba es más rápido. El punto rojo es el récord personal; los puntos más grandes, mejoras sobre las sesiones anteriores. Toca el gráfico para ver cada sesión.</p>
 
       <details className="text-base">
-        <summary className="cursor-pointer text-zinc-700 underline">Ver como tabla</summary>
+        <summary className="cursor-pointer text-mar-700 underline">Ver como tabla</summary>
         <table className="mt-2 w-full text-left text-base">
           <thead>
             <tr className="text-sm text-zinc-600">

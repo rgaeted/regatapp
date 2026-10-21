@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AvatarAnillo } from "@/components/avatar-anillo";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { requerirStaff } from "@/lib/acceso/staff";
@@ -37,7 +38,10 @@ export default async function FichaAtleta({ params, searchParams }: PageProps<"/
   const nombre = `${atleta.nombre} ${atleta.apellido}`;
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-8 text-lg">
-      <h1 className="text-2xl font-semibold text-zinc-900">{nombre}</h1>
+      <div className="flex items-center gap-4">
+        <AvatarAnillo nombre={atleta.nombre} apellido={atleta.apellido} tam={56} />
+        <h1 className="text-2xl font-semibold text-zinc-900">{nombre}</h1>
+      </div>
       {typeof sp.e === "string" && <p role="alert" className="font-medium text-red-700">{sp.e}</p>}
 
       <section className="flex flex-col gap-1 rounded-xl bg-zinc-100 p-4 text-base">

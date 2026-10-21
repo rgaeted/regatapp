@@ -10,7 +10,7 @@ describe("manifest de la PWA", () => {
     expect(m.lang).toBe("es-CL");
     expect(m.start_url).toBe("/");
     expect(m.display).toBe("standalone");
-    expect(m.background_color).toBe("#ffffff");
+    expect(m.background_color).toBe("#183243");
     expect(m.theme_color).toBe(m.background_color);
   });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AvatarAnillo } from "@/components/avatar-anillo";
 import { useState } from "react";
 
 type Atleta = { id: string; nombre: string; apellido: string; activo: boolean };
@@ -22,9 +23,10 @@ export function ListaAtletas({ atletas }: { atletas: Atleta[] }) {
       <ul className="flex flex-col divide-y divide-zinc-200">
         {visibles.map((a) => (
           <li key={a.id}>
-            <Link href={`/atletas/${a.id}`} className="flex min-h-14 items-center justify-between py-3">
-              <span className="font-medium">{a.apellido}, {a.nombre}</span>
-              {!a.activo && <span className="text-sm text-zinc-500">Inactivo</span>}
+            <Link href={`/atletas/${a.id}`} className="flex min-h-14 items-center gap-3 py-3">
+              <AvatarAnillo nombre={a.nombre} apellido={a.apellido} tam={40} />
+              <span className="flex-1 font-medium">{a.apellido}, {a.nombre}</span>
+              {!a.activo && <span className="text-sm text-zinc-600">Inactivo</span>}
             </Link>
           </li>
         ))}

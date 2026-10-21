@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { iconoPwa } from "@/lib/icono-pwa";
 
 // Solo estos tamaños existen; `escala` es la fracción del lado que ocupa el glifo.
-// El maskable usa 0.6: queda dentro del círculo central del 80 % (zona segura).
+// El maskable usa 0.56: el escudo queda dentro del círculo central del 80 % (zona segura).
 const ICONOS: Record<string, { lado: number; escala: number }> = {
   "192": { lado: 192, escala: 0.8 },
   "512": { lado: 512, escala: 0.8 },
@@ -25,7 +25,7 @@ export async function GET(
   });
   imagen.headers.set(
     "Cache-Control",
-    "public, max-age=31536000, immutable",
+    "public, max-age=86400",
   );
   return imagen;
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AvatarAnillo } from "@/components/avatar-anillo";
 import { cookies } from "next/headers";
 import { requerirUsuario } from "@/lib/acceso/actual";
 import { atletaPorDefecto, atletasVisibles, COOKIE_ULTIMO_ATLETA } from "@/lib/atletas/lista";
@@ -56,10 +57,18 @@ export default async function PaginaProgreso({ searchParams }: PageProps<"/progr
   const serie = distancia ? serieSplit(filas, distancia) : [];
   const semanas = volumenSemanal(filas);
   const qAtleta = esRemero ? "" : `atleta=${atletaId}&`;
+  const elegido = atletas.find((a) => a.id === atletaId);
+  const nombreAtleta = elegido ?? { nombre: usuario.nombre, apellido: "" };
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-7 px-6 py-8 text-lg">
-      <h1 className="text-2xl font-semibold text-zinc-900">Progreso</h1>
+      <div className="flex items-center gap-4">
+        <AvatarAnillo nombre={nombreAtleta.nombre} apellido={nombreAtleta.apellido} tam={56} />
+        <div className="leading-tight">
+          <p className="text-sm font-semibold uppercase tracking-wider text-mar-700">Progreso</p>
+          <h1 className="text-2xl font-semibold text-zinc-900">{`${nombreAtleta.nombre} ${nombreAtleta.apellido}`.trim()}</h1>
+        </div>
+      </div>
 
       {!esRemero && atletas.length > 0 && (
         <form method="get" className="flex gap-2">
@@ -106,21 +115,22 @@ export default async function PaginaProgreso({ searchParams }: PageProps<"/progr
           </section>
 
           <section className="flex flex-col gap-3">
-            <h2 className="text-xl font-semibold">Récords personales</h2>
+            <h2 className="border-b-2 border-mar-500 pb-1 text-xl font-semibold">Récords personales</h2>
             {records.length === 0 ? (
               <p className="text-base text-zinc-600">Los récords salen de sesiones en ergómetro con distancia y tiempo.</p>
             ) : (
               <ul className="flex flex-col divide-y divide-zinc-200">
                 {records.map((r) => (
-                  <li key={r.distancia_m} className="flex items-baseline justify-between gap-3 py-3">
-                    <div>
+                  <li key={r.distancia_m} className="cifras flex items-stretch gap-3 py-3">
+                    <span aria-hidden className="w-1 shrink-0 rounded-sm bg-pala-600" />
+                    <div className="flex-1">
                       <p className="font-semibold">{nombreDistancia(r.distancia_m)}</p>
                       <p className="text-sm text-zinc-600">
                         {TIPOS[r.tipo] ?? r.tipo} · {fechaLarga(r.fecha)}
                         {r.sesiones > 1 ? ` · ${r.sesiones} sesiones` : ""}
                       </p>
                     </div>
-                    <div className="text-right">
+                    <div className="self-center text-right">
                       <p className="text-xl font-semibold">{formatTiempo(r.tiempo_ds)}</p>
                       <p className="text-sm text-zinc-600">
                         {formatTiempo(r.split500_ds)} /500 · {r.watts} W
@@ -133,7 +143,7 @@ export default async function PaginaProgreso({ searchParams }: PageProps<"/progr
           </section>
 
           <section className="flex flex-col gap-3">
-            <h2 className="text-xl font-semibold">Split por distancia</h2>
+            <h2 className="border-b-2 border-mar-500 pb-1 text-xl font-semibold">Split por distancia</h2>
             {distancia === undefined ? (
               <p className="text-base text-zinc-600">
                 La curva aparece cuando hay al menos dos sesiones verificadas en la misma distancia.
@@ -155,7 +165,7 @@ export default async function PaginaProgreso({ searchParams }: PageProps<"/progr
           </section>
 
           <section className="flex flex-col gap-3">
-            <h2 className="text-xl font-semibold">Volumen semanal</h2>
+            <h2 className="border-b-2 border-mar-500 pb-1 text-xl font-semibold">Volumen semanal</h2>
             <BarrasVolumen key={atletaId} semanas={semanas} titulo="Distancia por semana, últimas 12 semanas" />
           </section>
         </>

@@ -1,8 +1,41 @@
 @import "tailwindcss";
 
+/*
+ * Identidad del Coastal Rowing Club · Colegio Patagonia, tomada del escudo.
+ * Los mismos valores viven en lib/marca.ts (PWA y gráficos); tests/unit/marca.test.ts
+ * comprueba que coincidan y que los pares de color cumplan el contraste WCAG.
+ *
+ * La escala "zinc" de Tailwind se redefine con grises azulados que parten del marino
+ * del escudo: así los componentes existentes (texto, bordes, botones) toman la marca
+ * sin tocar cada clase. zinc-900 es el marino #183243; zinc-950, el fondo más profundo.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4f9fa; /* papel: un blanco con un toque de agua */
+  --foreground: #183243; /* marino */
+  color-scheme: light;
+}
+
+@theme {
+  --color-zinc-50: #f4f9fa;
+  --color-zinc-100: #e8f0f2;
+  --color-zinc-200: #d3e0e4;
+  --color-zinc-300: #b6c9cf;
+  --color-zinc-400: #8aa2ab;
+  --color-zinc-500: #62808b;
+  --color-zinc-600: #476572;
+  --color-zinc-700: #324d5b;
+  --color-zinc-800: #25404f;
+  --color-zinc-900: #183243; /* marino */
+  --color-zinc-950: #0a1c2b; /* marino profundo */
+
+  /* turquesa del aro: 500 para líneas y marcas, 700 cuando debe leerse como texto */
+  --color-mar-100: #d9f0f2;
+  --color-mar-500: #2fa2ac;
+  --color-mar-700: #1a7a85;
+
+  /* rojo de las palas: solo marcas personales y lo que merece atención */
+  --color-pala-100: #f9e3e6;
+  --color-pala-600: #bc2c3d;
 }
 
 @theme inline {
@@ -12,14 +45,18 @@
   --font-mono: var(--font-geist-mono);
 }
 
-/* Tema claro fijo: las pantallas usan texto oscuro explícito (se lee junto al ergómetro),
-   así que oscurecer el fondo con el modo oscuro del celular las dejaba ilegibles. */
-:root {
-  color-scheme: light;
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Cifras de ancho fijo: tiempos y distancias se leen en columna. */
+.cifras {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-mar-500);
+  outline-offset: 2px;
 }

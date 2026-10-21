@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type KeyboardEvent } from "react";
+import { MARCA } from "@/lib/marca";
 import { fechaCorta, kilometros } from "@/lib/progreso/formato";
 import { ticksBonitos, type SemanaVolumen } from "@/lib/progreso/calculos";
 
@@ -39,11 +40,11 @@ export function BarrasVolumen({ semanas, titulo }: { semanas: SemanaVolumen[]; t
       className="flex flex-col gap-2"
       style={
         {
-          "--viz-barra": "#2a78d6",
-          "--viz-barra-elegida": "#1d5aa6",
-          "--viz-rejilla": "#e4e4e7",
-          "--viz-texto": "#3f3f46",
-          "--viz-texto-suave": "#71717a",
+          "--viz-barra": MARCA.turquesaOscuro,
+          "--viz-barra-elegida": MARCA.marino,
+          "--viz-rejilla": "#d3e0e4",
+          "--viz-texto": MARCA.marino,
+          "--viz-texto-suave": "#476572",
         } as React.CSSProperties
       }
     >
@@ -112,7 +113,7 @@ export function BarrasVolumen({ semanas, titulo }: { semanas: SemanaVolumen[]; t
       </p>
 
       <details className="text-base">
-        <summary className="cursor-pointer text-zinc-700 underline">Ver como tabla</summary>
+        <summary className="cursor-pointer text-mar-700 underline">Ver como tabla</summary>
         <table className="mt-2 w-full text-left text-base">
           <thead>
             <tr className="text-sm text-zinc-600">
