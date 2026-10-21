@@ -19,10 +19,10 @@ describe('opcionesInicio', () => {
     expect(hrefs('admin')).toEqual(expect.arrayContaining(['/atletas', '/entrenadores']))
   })
 
-  it('"Foto del ergómetro" está siempre deshabilitada hasta la fase de OCR', () => {
+  it('"Foto del ergómetro" está activa y es el botón principal para todos', () => {
     for (const rol of ['remero', 'entrenador', 'admin'] as const) {
       const foto = opcionesInicio(rol).find((o) => o.texto === 'Foto del ergómetro')
-      expect(foto?.activo).toBe(false)
+      expect(foto).toMatchObject({ activo: true, principal: true, href: '/foto' })
     }
   })
 })

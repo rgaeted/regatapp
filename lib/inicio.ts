@@ -11,8 +11,8 @@ export type OpcionInicio = {
 /** Botones de la pantalla de inicio según el rol. */
 export function opcionesInicio(rol: Rol): OpcionInicio[] {
   const opciones: OpcionInicio[] = [
-    { texto: 'Foto del ergómetro', href: '/foto', activo: false, principal: false },
-    { texto: 'Cargar a mano', href: '/sesion/nueva', activo: true, principal: true },
+    { texto: 'Foto del ergómetro', href: '/foto', activo: true, principal: true },
+    { texto: 'Cargar a mano', href: '/sesion/nueva', activo: true, principal: false },
     { texto: rol === 'remero' ? 'Mis sesiones' : 'Sesiones', href: '/sesiones', activo: true, principal: false },
   ]
   if (rol !== 'remero') opciones.push({ texto: 'Atletas', href: '/atletas', activo: true, principal: false })
