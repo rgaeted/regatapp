@@ -7,6 +7,7 @@ const base = {
   tipo: 'test',
   distancia_m: 2000,
   tiempo_ds: 4555,
+  spm_promedio: 28.5,
   split_500_seg: 113.9,
   watts: 207,
   verificado: true,
@@ -19,6 +20,7 @@ describe('filaSesion', () => {
     expect(f.tiempo).toBe('7:35.5')
     expect(f.split500).toBe('1:53.9')
     expect(f.watts).toBe(207)
+    expect(f.spm).toBe(28.5)
     expect(f.verificado).toBe(true)
   })
 

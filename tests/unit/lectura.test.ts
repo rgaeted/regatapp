@@ -131,6 +131,7 @@ describe('lecturaAEstado / huboCambios', () => {
     expect(huboCambios(leido, { ...leido })).toBe(false)
     expect(huboCambios(leido, { ...leido, tiempoDigitos: '7356' })).toBe(true)
     expect(huboCambios(leido, { ...leido, splitsDigitos: ['1539', '1542'] })).toBe(true)
+    expect(huboCambios(leido, { ...leido, splitsSpm: ['31', '30'] })).toBe(true)
     expect(huboCambios(leido, { ...leido, extras: { ...leido.extras, rpe: '7' } })).toBe(true)
   })
 

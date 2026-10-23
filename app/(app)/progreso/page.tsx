@@ -134,7 +134,7 @@ export default async function PaginaProgreso({ searchParams }: PageProps<"/progr
                     <div className="self-center text-right">
                       <p className="text-xl font-semibold">{formatTiempo(r.tiempo_ds)}</p>
                       <p className="text-sm text-zinc-600">
-                        {formatTiempo(r.split500_ds)} /500 · {r.watts} W
+                        {formatTiempo(r.split500_ds)} /500 · {r.watts} W{r.spm !== null ? ` · ${r.spm} spm` : ""}
                       </p>
                     </div>
                   </li>

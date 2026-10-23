@@ -80,6 +80,7 @@ export default async function PaginaSesiones({ searchParams }: PageProps<"/sesio
               <div className="flex flex-wrap items-center gap-x-3 text-base text-zinc-700">
                 <span>{TIPOS[f.tipo] ?? f.tipo}</span>
                 <span>/500: {f.split500}</span>
+                {f.spm !== null && <span>{f.spm} spm</span>}
                 {f.watts !== null && <span>{f.watts} W</span>}
                 {!f.verificado && (
                   <span className="rounded bg-amber-100 px-2 py-0.5 text-sm font-medium text-amber-900">

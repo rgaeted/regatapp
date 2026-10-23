@@ -60,6 +60,22 @@ describe('armarSesionInput', () => {
     if (!r.ok) expect(r.errores.splits).toBe('Tiempo inválido en un split')
   })
 
+  it('SPM por split: se guarda cuando está y queda ausente cuando no', () => {
+    const r = armarSesionInput(
+      estado({ nSplits: 2, splitsDigitos: ['1539', '1540'], splitsSpm: ['28', ''] }),
+    )
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.input.splits[0].spm).toBe(28)
+    expect(r.input.splits[1].spm).toBeUndefined()
+  })
+
+  it('SPM inválido en un split: error en splits', () => {
+    const r = armarSesionInput(estado({ nSplits: 1, splitsDigitos: ['1539'], splitsSpm: ['2.8.1'] }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errores.splits).toBe('SPM inválido en un split')
+  })
+
   it('sin atleta: error en atleta', () => {
     const r = armarSesionInput(estado({ atletaId: '' }))
     expect(r.ok).toBe(false)

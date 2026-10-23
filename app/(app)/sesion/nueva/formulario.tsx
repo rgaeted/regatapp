@@ -70,6 +70,7 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector, capt
   const [otra, setOtra] = useState(false);
   const [pendiente, empezar] = useTransition();
   const refsSplit = useRef<(HTMLInputElement | null)[]>([]);
+  const refsSpm = useRef<(HTMLInputElement | null)[]>([]);
   const refGuardar = useRef<HTMLButtonElement>(null);
 
   // "Atrás" puede restaurar esta página entera (bfcache) con el id de una sesión
@@ -99,8 +100,19 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector, capt
 
   const elegirCantidad = (n: number) => {
     const splitsDigitos = Array.from({ length: n }, (_, i) => e.splitsDigitos[i] ?? "");
-    cambiar({ nSplits: n, splitsDigitos });
+    const splitsSpm = Array.from({ length: n }, (_, i) => e.splitsSpm[i] ?? "");
+    cambiar({ nSplits: n, splitsDigitos, splitsSpm });
     marcar("splits");
+  };
+
+  const cambiarSpm = (i: number, texto: string) => {
+    const valor = texto.replace(/[^\d.,]/g, "");
+    const splitsSpm = Array.from({ length: e.nSplits }, (_, k) => e.splitsSpm[k] ?? "");
+    splitsSpm[i] = valor;
+    cambiar({ splitsSpm });
+    marcar("splits");
+    // Un SPM entero tiene 2 cifras: al completarlas se pasa al split siguiente.
+    if (/^\d{2}$/.test(valor)) irAlSiguienteTiempo(i);
   };
 
   const cambiarSplit = (i: number, texto: string, pegado = false) => {
@@ -112,7 +124,10 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector, capt
     if (digitos.length >= DIGITOS_SPLIT) irAlSiguiente(i);
   };
 
-  const irAlSiguiente = (i: number) => {
+  // Del tiempo de un split se pasa a su SPM; del SPM, al tiempo del split siguiente.
+  const irAlSiguiente = (i: number) => refsSpm.current[i]?.focus();
+
+  const irAlSiguienteTiempo = (i: number) => {
     const siguiente = refsSplit.current[i + 1];
     if (siguiente) siguiente.focus();
     else refGuardar.current?.focus();
@@ -155,7 +170,7 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector, capt
       />
     </label>
   );
-  const abrirMasDatos = hayFoto && (["spm_promedio", "fc_promedio", "calorias", "factor_arrastre"] as CampoOcr[]).some((c) => dudoso(c));
+  const abrirMasDatos = hayFoto && (["fc_promedio", "calorias", "factor_arrastre"] as CampoOcr[]).some((c) => dudoso(c));
 
   const resumenSuma = useMemo(() => {
     if (diferencia === 0 || totalDs === null) return "";
@@ -256,6 +271,8 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector, capt
         {tiempoInvalido && <span className="text-base text-red-700">Los segundos deben ser menores que 60.</span>}
       </label>
 
+      {extra("spm", "Remadas por minuto (SPM)", "decimal", "spm_promedio")}
+
       <div className="flex flex-col gap-2">
         <span className={etiqueta}>
           Splits
@@ -286,12 +303,13 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector, capt
           />
         )}
         {e.nSplits > 0 && (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-2">
             {Array.from({ length: e.nSplits }, (_, i) => {
               const digitos = e.splitsDigitos[i] ?? "";
               const malo = digitos !== "" && digitosATiempo(digitos) === null;
               return (
-                <label key={i} className="flex flex-col gap-1">
+                <div key={i} className="grid grid-cols-[1fr_6rem] items-end gap-2">
+                <label className="flex flex-col gap-1">
                   <span className="text-sm text-zinc-600">Split {i + 1}</span>
                   <input
                     ref={(el) => { refsSplit.current[i] = el; }}
@@ -314,6 +332,25 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector, capt
                     }}
                   />
                 </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-sm text-zinc-600">SPM</span>
+                  <input
+                    ref={(el) => { refsSpm.current[i] = el; }}
+                    className={`${campo} ${dudoso("splits") ? AMBAR : ""}`}
+                    inputMode="decimal"
+                    enterKeyHint={i === e.nSplits - 1 ? "done" : "next"}
+                    placeholder="spm"
+                    value={e.splitsSpm[i] ?? ""}
+                    onChange={(ev) => cambiarSpm(i, ev.target.value)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter") {
+                        ev.preventDefault();
+                        irAlSiguienteTiempo(i);
+                      }
+                    }}
+                  />
+                </label>
+                </div>
               );
             })}
           </div>
@@ -346,7 +383,6 @@ export function FormularioSesion({ atletas, atletaInicial, mostrarSelector, capt
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3">
-          {extra("spm", "SPM", "decimal", "spm_promedio")}
           {extra("fcPromedio", "FC promedio", "numeric", "fc_promedio")}
           {extra("fcMaxima", "FC máxima")}
           {extra("calorias", "Calorías", "numeric", "calorias")}

@@ -9,6 +9,7 @@ export type FilaProgreso = {
   modalidad: string
   distancia_m: number | null
   tiempo_ds: number | null
+  spm_promedio: number | null
 }
 
 export type RecordPersonal = {
@@ -17,6 +18,7 @@ export type RecordPersonal = {
   tiempo_ds: number
   split500_ds: number
   watts: number
+  spm: number | null
   fecha: string
   tipo: string
   /** Cuántas sesiones verificadas hay en esta distancia. */
@@ -56,6 +58,7 @@ export function recordsPorDistancia(filas: FilaProgreso[]): RecordPersonal[] {
         tiempo_ds: mejor.tiempo_ds,
         split500_ds: split500(mejor.tiempo_ds, distancia_m),
         watts: watts(mejor.tiempo_ds, distancia_m),
+        spm: mejor.spm_promedio,
         fecha: mejor.fecha,
         tipo: mejor.tipo,
         sesiones: grupo.length,

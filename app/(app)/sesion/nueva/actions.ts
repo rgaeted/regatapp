@@ -24,6 +24,7 @@ const estadoSchema = z.object({
   tiempoDigitos: z.string(),
   nSplits: z.number().int().min(0).max(50),
   splitsDigitos: z.array(z.string()).max(50),
+  splitsSpm: z.array(z.string()).max(50),
   extras: z.object({
     spm: z.string(),
     fcPromedio: z.string(),

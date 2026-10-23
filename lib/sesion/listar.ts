@@ -8,6 +8,7 @@ type FilaVista = {
   tipo: string
   distancia_m: number | null
   tiempo_ds: number | null
+  spm_promedio: number | null
   split_500_seg: number | null
   watts: number | null
   verificado: boolean
@@ -20,6 +21,7 @@ export type FilaSesion = {
   tipo: string
   distancia_m: number | null
   tiempo: string
+  spm: number | null
   split500: string
   watts: number | null
   verificado: boolean
@@ -42,6 +44,7 @@ export function filaSesion(f: FilaVista): FilaSesion {
     tipo: f.tipo,
     distancia_m: f.distancia_m,
     tiempo: f.tiempo_ds === null ? SIN_DATO : formatTiempo(f.tiempo_ds),
+    spm: f.spm_promedio,
     // La vista da segundos con un decimal; formatTiempo trabaja en décimas.
     split500: f.split_500_seg === null ? SIN_DATO : formatTiempo(Math.round(f.split_500_seg * 10)),
     watts: f.watts,
@@ -58,7 +61,7 @@ export async function listarSesiones(
 ): Promise<FilaSesion[]> {
   const { data, error } = await supabase
     .from('v_sesion_calculada')
-    .select('id, fecha, tipo, distancia_m, tiempo_ds, split_500_seg, watts, verificado, origen')
+    .select('id, fecha, tipo, distancia_m, tiempo_ds, spm_promedio, split_500_seg, watts, verificado, origen')
     .eq('atleta_id', atletaId)
     .order('fecha', { ascending: false })
     .limit(limite)

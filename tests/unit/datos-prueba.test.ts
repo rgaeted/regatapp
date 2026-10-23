@@ -41,7 +41,7 @@ describe('generarSesionesPrueba', () => {
 
     it(`${a.apellido}: alcanza para ver récords, una curva de 2 km y también hay sin verificar`, () => {
       const verificadas = sesiones.filter((s) => s.sesion.verificado).map(
-        (s, i): FilaProgreso => ({ id: String(i), fecha: s.sesion.fecha, tipo: s.sesion.tipo, modalidad: s.sesion.modalidad, distancia_m: s.sesion.distancia_m, tiempo_ds: s.sesion.tiempo_ds }),
+        (s, i): FilaProgreso => ({ id: String(i), fecha: s.sesion.fecha, tipo: s.sesion.tipo, modalidad: s.sesion.modalidad, distancia_m: s.sesion.distancia_m, tiempo_ds: s.sesion.tiempo_ds, spm_promedio: s.sesion.spm_promedio }),
       )
       expect(recordsPorDistancia(verificadas).length).toBeGreaterThanOrEqual(3)
       expect(distanciasConCurva(verificadas)).toContain(2000)

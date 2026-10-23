@@ -142,6 +142,7 @@ export function lecturaAEstado(l: LecturaOcr, base: EstadoFormulario): EstadoFor
     tiempoDigitos: l.tiempo_ds === null ? '' : tiempoADigitos(l.tiempo_ds),
     nSplits: l.splits.length,
     splitsDigitos: l.splits.map((s) => tiempoADigitos(s.tiempo_ds)),
+    splitsSpm: l.splits.map((s) => texto(s.spm)),
     extras: {
       ...base.extras,
       spm: texto(l.spm_promedio),
@@ -151,6 +152,10 @@ export function lecturaAEstado(l: LecturaOcr, base: EstadoFormulario): EstadoFor
     },
   }
 }
+
+/** SPM de los splits en uso, comparables aunque el arreglo quede más corto que `nSplits`. */
+const spmSplits = (e: EstadoFormulario): string =>
+  Array.from({ length: e.nSplits }, (_, i) => e.splitsSpm[i] ?? '').join('|')
 
 /**
  * ¿La persona corrigió algo de lo leído? Solo cuentan los datos de la pantalla
@@ -162,6 +167,7 @@ export function huboCambios(leido: EstadoFormulario, final: EstadoFormulario): b
     leido.tiempoDigitos !== final.tiempoDigitos ||
     leido.nSplits !== final.nSplits ||
     leido.splitsDigitos.join('|') !== final.splitsDigitos.join('|') ||
+    spmSplits(leido) !== spmSplits(final) ||
     JSON.stringify(leido.extras) !== JSON.stringify(final.extras)
   )
 }

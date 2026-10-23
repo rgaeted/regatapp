@@ -16,7 +16,7 @@ export async function cargarProgreso(
     leerTodo<FilaProgreso>('sesiones', (desde, hasta) =>
       supabase
         .from('v_sesion_calculada')
-        .select('id, fecha, tipo, modalidad, distancia_m, tiempo_ds')
+        .select('id, fecha, tipo, modalidad, distancia_m, tiempo_ds, spm_promedio')
         .eq('atleta_id', atletaId)
         .eq('verificado', true)
         .order('fecha', { ascending: true })

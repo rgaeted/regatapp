@@ -17,6 +17,7 @@ const f = (o: Partial<FilaProgreso> = {}): FilaProgreso => ({
   modalidad: 'ergometro',
   distancia_m: 2000,
   tiempo_ds: 4555,
+  spm_promedio: null,
   ...o,
 })
 

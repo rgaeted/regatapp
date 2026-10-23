@@ -16,6 +16,8 @@ export type EstadoFormulario = {
   tiempoDigitos: string
   nSplits: number
   splitsDigitos: string[]
+  /** SPM de cada split, paralelo a `splitsDigitos`; vacío = sin dato. */
+  splitsSpm: string[]
   extras: {
     spm: string
     fcPromedio: string
@@ -44,6 +46,7 @@ export function estadoInicial(id: string, atletaId: string, ahora: Date): Estado
     tiempoDigitos: '',
     nSplits: 0,
     splitsDigitos: [],
+    splitsSpm: [],
     extras: { spm: '', fcPromedio: '', fcMaxima: '', calorias: '', drag: '', rpe: '', descripcion: '', notas: '' },
   }
 }
@@ -92,8 +95,10 @@ export function armarSesionInput(e: EstadoFormulario, ahora: Date = new Date()):
         distancia !== undefined && Number.isInteger(distancia) ? repartirSplits(distancia, e.nSplits) : []
       crudos.forEach((d, i) => {
         const t = digitosATiempo(d)
+        const spm = numero(e.splitsSpm[i] ?? '')
         if (t === null) errores.splits = 'Tiempo inválido en un split'
-        else splits.push({ orden: i + 1, distancia_m: distancias[i], tiempo_ds: t })
+        else if (spm !== undefined && Number.isNaN(spm)) errores.splits = 'SPM inválido en un split'
+        else splits.push({ orden: i + 1, distancia_m: distancias[i], tiempo_ds: t, spm })
       })
     }
   }
